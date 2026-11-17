@@ -1,0 +1,412 @@
+{
+  "screenshots": [
+    {
+      "id": "01-desktop-hero",
+      "file": "/mnt/agents/output/app/docs/assets/screenshots/01-desktop-hero.png",
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "deviceScaleFactor": 2
+      },
+      "scenario": "Desktop hero: полный интерфейс студии с нарисованным эскизом моли (линворк + dotwork, вертикальная симметрия)",
+      "actions": [
+        "22 CDP pen strokes через кисти Fineline, Traditional, Blackwork, Dotwork",
+        "симметрия: клавиша M",
+        "название проекта: реальный input"
+      ],
+      "results": {
+        "strokes": [
+          {
+            "brush": "Fineline",
+            "points": 31
+          },
+          {
+            "brush": "Fineline",
+            "points": 19
+          },
+          {
+            "brush": "Traditional",
+            "points": 13
+          },
+          {
+            "brush": "Blackwork",
+            "points": 9
+          },
+          {
+            "brush": "Traditional",
+            "points": 37
+          },
+          {
+            "brush": "Fineline",
+            "points": 11
+          },
+          {
+            "brush": "Dotwork",
+            "points": 3
+          },
+          {
+            "brush": "Dotwork",
+            "points": 3
+          },
+          {
+            "brush": "Dotwork",
+            "points": 3
+          },
+          {
+            "brush": "Dotwork",
+            "points": 3
+          },
+          {
+            "brush": "Fineline",
+            "points": 35
+          },
+          {
+            "brush": "Fineline",
+            "points": 35
+          },
+          {
+            "brush": "Fineline",
+            "points": 27
+          },
+          {
+            "brush": "Fineline",
+            "points": 27
+          },
+          {
+            "brush": "Dotwork",
+            "points": 21
+          },
+          {
+            "brush": "Fineline",
+            "points": 29
+          },
+          {
+            "brush": "Fineline",
+            "points": 33
+          },
+          {
+            "brush": "Fineline",
+            "points": 25
+          },
+          {
+            "brush": "Dotwork",
+            "points": 19
+          },
+          {
+            "brush": "Dotwork",
+            "points": 4
+          },
+          {
+            "brush": "Fineline",
+            "points": 13
+          },
+          {
+            "brush": "Fineline",
+            "points": 13
+          }
+        ],
+        "symmetryActive": true,
+        "canvasNonEmpty": true,
+        "sampledPixels": 65536,
+        "inkPixels": 1526,
+        "inkShare": 0.023284912109375,
+        "hash": "5eb897e7:c88cb555"
+      },
+      "checks": {
+        "canvasNonEmpty": true,
+        "extraOk": true,
+        "fileExistsNonZero": true,
+        "fileBytes": 448621,
+        "noConsoleErrors": true,
+        "noPageErrors": true
+      },
+      "consoleErrors": [],
+      "pageErrors": [],
+      "status": "PASS"
+    },
+    {
+      "id": "02-artwork-analysis",
+      "file": "/mnt/agents/output/app/docs/assets/screenshots/02-artwork-analysis.png",
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "deviceScaleFactor": 2
+      },
+      "scenario": "Локальный анализ эскиза: диалог «Проверка эскиза» с реальными метриками нарисованной моли",
+      "actions": [
+        "клик по кнопке «Проверка эскиза» в шапке"
+      ],
+      "results": {
+        "dialogOpen": true,
+        "densityPct": 2.3,
+        "inkComponents": 240,
+        "allMetrics": {
+          "Покрытие холста": "2.3%",
+          "Компонентов чернил": "240",
+          "Узлы оригинал → упрощение": "0 → 0",
+          "Макс. доля квадранта": "35.0%"
+        }
+      },
+      "checks": {
+        "canvasNonEmpty": true,
+        "extraOk": true,
+        "fileExistsNonZero": true,
+        "fileBytes": 433579,
+        "noConsoleErrors": true,
+        "noPageErrors": true
+      },
+      "consoleErrors": [],
+      "pageErrors": [],
+      "status": "PASS"
+    },
+    {
+      "id": "03-diagnostics-api",
+      "file": "/mnt/agents/output/app/docs/assets/screenshots/03-diagnostics-api.png",
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "deviceScaleFactor": 2
+      },
+      "scenario": "Диагностика API/устройства: Canvas 2D, маски, перо, фильтры — локальные проверки платформы",
+      "actions": [
+        "клик по кнопке «Диагностика устройства» в шапке"
+      ],
+      "results": {
+        "counts": {
+          "pass": 10,
+          "review": 0,
+          "fail": 0
+        },
+        "checkNames": [
+          "Canvas 2D: запись и чтение пикселей",
+          "Контуры Path2D",
+          "Обрезка кисти выделением (clip)",
+          "Маски слоёв (destination-in)",
+          "Обрезка слоя по нижнему (clipToBelow)",
+          "Фильтр трафарета: grayscale + contrast",
+          "OffscreenCanvas (справочно)",
+          "Pointer Events API",
+          "Нажим пера через PointerEvent",
+          "Сглаживание пера (getCoalescedEvents)"
+        ]
+      },
+      "checks": {
+        "canvasNonEmpty": true,
+        "extraOk": true,
+        "fileExistsNonZero": true,
+        "fileBytes": 467015,
+        "noConsoleErrors": true,
+        "noPageErrors": true
+      },
+      "consoleErrors": [],
+      "pageErrors": [],
+      "status": "PASS"
+    },
+    {
+      "id": "04-tablet-working",
+      "file": "/mnt/agents/output/app/docs/assets/screenshots/04-tablet-working.png",
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "deviceScaleFactor": 2
+      },
+      "scenario": "Tablet 768×1024: рабочее состояние, открыт ящик слоёв, эскиз моли на холсте",
+      "actions": [
+        "viewport 768×1024",
+        "клик по «Слои и скан»"
+      ],
+      "results": {
+        "rightDrawerOpen": true
+      },
+      "checks": {
+        "canvasNonEmpty": true,
+        "fileExistsNonZero": true,
+        "fileBytes": 202935,
+        "noConsoleErrors": true,
+        "noPageErrors": true
+      },
+      "consoleErrors": [],
+      "pageErrors": [],
+      "status": "PASS"
+    },
+    {
+      "id": "05-mobile-working",
+      "file": "/mnt/agents/output/app/docs/assets/screenshots/05-mobile-working.png",
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "deviceScaleFactor": 2
+      },
+      "scenario": "Mobile 390×844: рабочее состояние, компактный интерфейс, эскиз моли вписан в холст",
+      "actions": [
+        "viewport 390×844"
+      ],
+      "results": {
+        "noHorizontalOverflow": true
+      },
+      "checks": {
+        "canvasNonEmpty": true,
+        "fileExistsNonZero": true,
+        "fileBytes": 113211,
+        "noConsoleErrors": true,
+        "noPageErrors": true
+      },
+      "consoleErrors": [],
+      "pageErrors": [],
+      "status": "PASS"
+    }
+  ],
+  "drawing": {
+    "subject": "орнаментальная моль: вертикальная симметрия (клавиша M), линворк + сдержанный dotwork",
+    "input": "реальные CDP pen pointer events (pointerType pen, pressure), без DEV-хуков и без вставки изображений",
+    "strokes": [
+      {
+        "brush": "Fineline",
+        "points": 31
+      },
+      {
+        "brush": "Fineline",
+        "points": 19
+      },
+      {
+        "brush": "Traditional",
+        "points": 13
+      },
+      {
+        "brush": "Blackwork",
+        "points": 9
+      },
+      {
+        "brush": "Traditional",
+        "points": 37
+      },
+      {
+        "brush": "Fineline",
+        "points": 11
+      },
+      {
+        "brush": "Dotwork",
+        "points": 3
+      },
+      {
+        "brush": "Dotwork",
+        "points": 3
+      },
+      {
+        "brush": "Dotwork",
+        "points": 3
+      },
+      {
+        "brush": "Dotwork",
+        "points": 3
+      },
+      {
+        "brush": "Fineline",
+        "points": 35
+      },
+      {
+        "brush": "Fineline",
+        "points": 35
+      },
+      {
+        "brush": "Fineline",
+        "points": 27
+      },
+      {
+        "brush": "Fineline",
+        "points": 27
+      },
+      {
+        "brush": "Dotwork",
+        "points": 21
+      },
+      {
+        "brush": "Fineline",
+        "points": 29
+      },
+      {
+        "brush": "Fineline",
+        "points": 33
+      },
+      {
+        "brush": "Fineline",
+        "points": 25
+      },
+      {
+        "brush": "Dotwork",
+        "points": 19
+      },
+      {
+        "brush": "Dotwork",
+        "points": 4
+      },
+      {
+        "brush": "Fineline",
+        "points": 13
+      },
+      {
+        "brush": "Fineline",
+        "points": 13
+      }
+    ],
+    "symmetryActive": true,
+    "hashes": {
+      "before": "8b2e49ee:1cdca322",
+      "after": "5eb897e7:c88cb555"
+    },
+    "sampledPixels": 65536,
+    "inkPixels": 1526,
+    "inkShare": 0.023284912109375,
+    "hash": "5eb897e7:c88cb555",
+    "canvasNonEmpty": true
+  },
+  "analysis": {
+    "densityPct": 2.3,
+    "inkComponents": 240,
+    "allMetrics": {
+      "Покрытие холста": "2.3%",
+      "Компонентов чернил": "240",
+      "Узлы оригинал → упрощение": "0 → 0",
+      "Макс. доля квадранта": "35.0%"
+    }
+  },
+  "diagnostics": {
+    "counts": {
+      "pass": 10,
+      "review": 0,
+      "fail": 0
+    },
+    "checks": [
+      "Canvas 2D: запись и чтение пикселей",
+      "Контуры Path2D",
+      "Обрезка кисти выделением (clip)",
+      "Маски слоёв (destination-in)",
+      "Обрезка слоя по нижнему (clipToBelow)",
+      "Фильтр трафарета: grayscale + contrast",
+      "OffscreenCanvas (справочно)",
+      "Pointer Events API",
+      "Нажим пера через PointerEvent",
+      "Сглаживание пера (getCoalescedEvents)"
+    ]
+  },
+  "generatedAt": "2026-11-17T20:24:44.873Z",
+  "durationMs": 29907,
+  "command": "node scripts/marketing-capture.mjs",
+  "environment": {
+    "project": "Трафарет (команда «Кир»)",
+    "mode": "vite dev server + playwright chromium",
+    "node": "v22.23.5",
+    "playwright": "1.62.0",
+    "vite": "7.3.8",
+    "deviceScaleFactor": 2,
+    "devHookUsed": false,
+    "stockImagesUsed": false
+  },
+  "summary": {
+    "screenshots": 5,
+    "pass": 5,
+    "fail": 0,
+    "canvasNonEmpty": true,
+    "overall": "PASS"
+  }
+}

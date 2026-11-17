@@ -1,0 +1,194 @@
+pageType: cover
+background:
+  type: solid
+  color: "$paper"
+notes: "Трафарет — авторский key visual. Орнаментальная мола: fineline + сильное тело + сдержанный dotwork."
+elements:
+  # ---- paper depth: faint wash behind the moth ----
+  - elementId: paper-wash
+    elementType: shape
+    bounds: [170, 210, 660, 780]
+    shapeName: ellipse
+    fill: {type: solid, color: "$hairline"}
+    opacity: 0.35
+
+  # ---- movement: broken trailing strokes past the big wing ----
+  - elementId: motion-arc-1
+    elementType: shape
+    bounds: [840, 150, 90, 110]
+    shapeName: custom
+    viewBox: [90, 110]
+    path: "M5,105 C40,80 75,45 88,5"
+    border: {style: solid, width: 1, color: "$ink"}
+    opacity: 0.55
+  - elementId: motion-arc-2
+    elementType: shape
+    bounds: [870, 190, 70, 85]
+    shapeName: custom
+    viewBox: [70, 85]
+    path: "M4,82 C32,62 58,35 68,3"
+    border: {style: solid, width: 1, color: "$ink"}
+    opacity: 0.4
+  - elementId: motion-arc-3
+    elementType: shape
+    bounds: [895, 235, 50, 60]
+    shapeName: custom
+    viewBox: [50, 60]
+    path: "M3,57 C22,44 40,24 47,2"
+    border: {style: solid, width: 1, color: "$ink"}
+    opacity: 0.3
+
+  # ---- left forewing (smaller, lower) ----
+  - elementId: wing-left
+    elementType: shape
+    bounds: [185, 470, 310, 290]
+    shapeName: custom
+    viewBox: [310, 290]
+    path: "M315,25 C160,10 40,80 12,180 C30,250 120,292 200,288 C260,280 305,200 315,25 Z"
+    border: {style: solid, width: 1.2, color: "$ink"}
+  - elementId: wing-left-inner
+    elementType: shape
+    bounds: [185, 470, 310, 290]
+    shapeName: custom
+    viewBox: [310, 290]
+    path: "M280,45 C165,35 75,95 50,180 C65,235 135,268 200,262 C245,255 278,190 280,45 Z"
+    border: {style: solid, width: 0.8, color: "$ink"}
+    opacity: 0.85
+
+  # ---- hindwings ----
+  - elementId: wing-hind-right
+    elementType: shape
+    bounds: [505, 640, 210, 230]
+    shapeName: custom
+    viewBox: [210, 230]
+    path: "M5,5 C120,20 200,90 205,160 C200,220 120,230 60,200 C25,160 5,80 5,5 Z"
+    border: {style: solid, width: 1.2, color: "$ink"}
+  - elementId: wing-hind-left
+    elementType: shape
+    bounds: [255, 655, 215, 215]
+    shapeName: custom
+    viewBox: [215, 215]
+    path: "M210,5 C95,15 10,85 8,155 C15,215 95,222 150,195 C190,150 210,80 210,5 Z"
+    border: {style: solid, width: 1.2, color: "$ink"}
+
+  # ---- big right forewing leaving the center ----
+  - elementId: wing-right
+    elementType: shape
+    bounds: [490, 230, 400, 380]
+    shapeName: custom
+    viewBox: [400, 380]
+    path: "M5,330 C40,120 160,10 295,8 C375,40 398,150 368,255 C335,340 180,368 40,352 C20,345 8,340 5,330 Z"
+    border: {style: solid, width: 1.2, color: "$ink"}
+  - elementId: wing-right-inner
+    elementType: shape
+    bounds: [490, 230, 400, 380]
+    shapeName: custom
+    viewBox: [400, 380]
+    path: "M45,320 C75,150 175,55 285,50 C345,80 360,170 335,245 C305,310 185,332 70,322 Z"
+    border: {style: solid, width: 0.8, color: "$ink"}
+    opacity: 0.85
+
+  # ---- restrained dotwork along the wing edges ----
+  - elementId: dot-1
+    elementType: shape
+    bounds: [772, 298, 7, 7]
+    shapeName: ellipse
+    fill: {type: solid, color: "$ink"}
+  - elementId: dot-2
+    elementType: shape
+    bounds: [798, 342, 5.5, 5.5]
+    shapeName: ellipse
+    fill: {type: solid, color: "$ink"}
+  - elementId: dot-3
+    elementType: shape
+    bounds: [816, 388, 4.5, 4.5]
+    shapeName: ellipse
+    fill: {type: solid, color: "$ink"}
+  - elementId: dot-4
+    elementType: shape
+    bounds: [824, 434, 4, 4]
+    shapeName: ellipse
+    fill: {type: solid, color: "$ink"}
+  - elementId: dot-5
+    elementType: shape
+    bounds: [800, 516, 5, 5]
+    shapeName: ellipse
+    fill: {type: solid, color: "$ink"}
+  - elementId: dot-6
+    elementType: shape
+    bounds: [296, 524, 6, 6]
+    shapeName: ellipse
+    fill: {type: solid, color: "$ink"}
+  - elementId: dot-7
+    elementType: shape
+    bounds: [276, 560, 5, 5]
+    shapeName: ellipse
+    fill: {type: solid, color: "$ink"}
+  - elementId: dot-8
+    elementType: shape
+    bounds: [262, 596, 4, 4]
+    shapeName: ellipse
+    fill: {type: solid, color: "$ink"}
+  - elementId: dot-9
+    elementType: shape
+    bounds: [604, 252, 4.5, 4.5]
+    shapeName: ellipse
+    fill: {type: solid, color: "$ink"}
+
+  # ---- antennae ----
+  - elementId: antenna-left
+    elementType: line
+    bounds: [395, 350, 100, 95]
+    viewBox: [100, 95]
+    points: "100,95 42,45 6,4"
+    curve: smooth
+    border: {style: solid, width: 1.2, color: "$ink"}
+  - elementId: antenna-right
+    elementType: line
+    bounds: [510, 340, 105, 100]
+    viewBox: [105, 100]
+    points: "2,98 62,48 103,4"
+    curve: smooth
+    border: {style: solid, width: 1.2, color: "$ink"}
+
+  # ---- strong body ----
+  - elementId: moth-body
+    elementType: shape
+    bounds: [440, 430, 90, 490]
+    shapeName: custom
+    viewBox: [90, 490]
+    path: "M45,0 C70,40 80,110 75,200 C70,330 60,430 45,488 C30,430 18,330 15,200 C12,110 20,40 45,0 Z"
+    fill: {type: solid, color: "$ink"}
+  - elementId: moth-head
+    elementType: shape
+    bounds: [486, 428, 30, 26]
+    shapeName: ellipse
+    fill: {type: solid, color: "$ink"}
+
+  # ---- text: author mark ----
+  - elementId: author-mark
+    elementType: text
+    bounds: [56, 990, 460, 210]
+    content:
+      style: "$mark"
+      fontSize: 160
+      letterSpacing: 8
+      wrap: false
+      align: [left, middle]
+      text: КИР
+
+  # ---- text: technical line ----
+  - elementId: tech-line
+    elementType: text
+    bounds: [60, 64, 640, 22]
+    content:
+      style: "$tech"
+      wrap: false
+      align: [left, middle]
+      text: |
+        <p><span style="font-family:Manrope">ТРАФАРЕТ</span><span style="font-family:IBM Plex Mono"> / LINE STUDY 01</span></p>
+  - elementId: tech-dash
+    elementType: shape
+    bounds: [60, 98, 56, 3]
+    shapeName: rect
+    fill: {type: solid, color: "$ink"}

@@ -1,0 +1,25 @@
+version: v2
+title: "Трафарет — key visual"
+size: [960, 1280]
+customFonts:
+  - family: Noto Serif Display
+    src: "https://fonts.googleapis.com/css2?family=Noto%20Serif%20Display"
+  - family: Manrope
+    src: "https://fonts.googleapis.com/css2?family=Manrope"
+  - family: IBM Plex Mono
+    src: "https://fonts.googleapis.com/css2?family=IBM%20Plex%20Mono"
+theme:
+  colors:
+    ink: "#0a0a0a"
+    paper: "#fafafa"
+    hairline: "#e5e5e5"
+  textStyles:
+    mark:
+      fontFamily: Noto Serif Display
+      color: "$ink"
+    tech:
+      fontSize: 13
+      color: "$ink"
+      letterSpacing: 4
+pages:
+  - pages/1_key-visual.page

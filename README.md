@@ -4,6 +4,13 @@
 
 Трафарет — локальный инструмент для эскизов, линворка, обработки сканов и подготовки трафаретов к переносу. Всё работает на вашем устройстве: рисование, слои, анализ, экспорт и печать не требуют сети, аккаунтов и подписки. Инструмент не мешает рисовать.
 
+![Трафарет — рабочий стол](docs/assets/screenshots/01-desktop-hero.png)
+
+## Сайт проекта
+
+- **Публичная страница:** [volkohvat.github.io/trafaret](https://volkohvat.github.io/trafaret/) (публикуется из каталога `docs/` через GitHub Pages)
+- Локальная копия: [docs/index.html](docs/index.html)
+
 [![Windows](https://img.shields.io/badge/Windows-EXE-0078D6)](https://github.com/VolkoHvat/trafaret/releases/latest/download/Трафарет-Windows-x64.exe)
 [![Android](https://img.shields.io/badge/Android-APK-3DDC84)](https://github.com/VolkoHvat/trafaret/releases/latest/download/Трафарет-Android.apk)
 [![Исходники](https://img.shields.io/badge/GitHub-исходники-181717)](https://github.com/VolkoHvat/trafaret)
@@ -57,6 +64,22 @@
 - **Windows** — десктопное приложение на Electron.
 - **Android** — приложение на Capacitor (ru.trafaret.studio, minSdk 24, targetSdk 36).
 - **Web/PWA** — тот же код в браузере.
+
+## Скриншоты и архитектура
+
+Реальные снимки интерфейса (все пять сняты с работающего приложения):
+
+1. [Рабочий стол — главный экран](docs/assets/screenshots/01-desktop-hero.png)
+2. [Анализ эскиза](docs/assets/screenshots/02-artwork-analysis.png)
+3. [Диагностика API](docs/assets/screenshots/03-diagnostics-api.png)
+4. [Планшетный режим](docs/assets/screenshots/04-tablet-working.png)
+5. [Мобильный режим](docs/assets/screenshots/05-mobile-working.png)
+
+Архитектура:
+
+- [Интерактивная схема](docs/assets/diagrams/architecture.html) — открывается в браузере, работает офлайн
+- [architecture.json](docs/assets/architecture.json) — машиночитаемое описание модулей и связей
+- Диаграммы: [светлая, 1440×900](docs/assets/diagrams/architecture.visual-check.1440x900.light.png) и [тёмная, 2048×1320](docs/assets/diagrams/architecture.visual-check.2048x1320.dark.png)
 
 ## Установка
 
@@ -116,6 +139,8 @@ npm run android:apk
 | Память, prefill | **800 МБ** против baseline 1107 МБ (**−27,7%**) |
 | Память, postfill | **897 МБ** против baseline 1312 МБ (**−31,7%**) |
 | Заливка (fill) | **732,31 мс** против baseline 1135,44 мс (в **1,55 раза** быстрее) |
+| Маркетинговая страница (docs/) | **75/75 PASS** |
+| Скриншоты работающего приложения | **5/5 PASS** — сняты и проверены |
 
 Скрипты проверок: `npm run audit:runtime`, `npm run audit:electron`, `npm run audit:production`, `npm run audit:strictmode` (реализация — в `scripts/`).
 
@@ -134,6 +159,7 @@ npm run android:apk
 
 - [Release Notes v1.0](docs/RELEASE_NOTES.md) — файлы выпуска, размеры, SHA-256.
 - [Маркетинговый пакет](docs/MARKETING.md) — позиционирование и тексты команды «Кир».
+- [Сайт проекта](docs/index.html) — статическая страница для GitHub Pages ([публичная версия](https://volkohvat.github.io/trafaret/)).
 
 ---
 

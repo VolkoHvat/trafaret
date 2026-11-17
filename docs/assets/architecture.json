@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Трафарет — автономная студия с управляемой синхронизацией",
+    "quality_profile": "showcase",
+    "viewBox": [1320, 520],
+    "views": [
+      {
+        "id": "full-flow",
+        "label": "Полный поток",
+        "focus": ["devices", "ui", "analyzer", "engine", "project", "indexeddb", "export", "sync", "gdrive"],
+        "note": "Путь эскиза: от загрузки на устройство до экспорта и синхронизации с Google Drive."
+      },
+      {
+        "id": "offline-core",
+        "label": "Локальная работа без сети",
+        "focus": ["devices", "ui", "analyzer", "engine", "project", "indexeddb", "export"],
+        "note": "Весь контур от эскиза до печати работает на устройстве без сети."
+      },
+      {
+        "id": "sync-conflicts",
+        "label": "Синхронизация и конфликты 412",
+        "focus": ["project", "sync", "gdrive"],
+        "note": "Сравнение md5 и etag с запросом If-Match; при ответе 412 выбор версии пользователем."
+      }
+    ]
+  },
+  "components": [
+    { "id": "devices", "type": "external", "label": "Устройства", "sublabel": "Desktop · Mobile", "pos": [60, 140], "size": [150, 70] },
+    { "id": "ui", "type": "frontend", "label": "Интерфейс Трафарета", "sublabel": "React", "pos": [270, 140], "size": [150, 70] },
+    { "id": "analyzer", "type": "backend", "label": "Локальный анализ эскиза", "sublabel": "Canvas 2D", "pos": [270, 340], "size": [150, 70] },
+    { "id": "engine", "type": "backend", "label": "Движок линворка", "sublabel": "Canvas 2D", "pos": [480, 140], "size": [150, 70] },
+    { "id": "project", "type": "database", "label": "Локальный проект", "sublabel": ".tattoo.json", "pos": [690, 140], "size": [150, 70] },
+    { "id": "indexeddb", "type": "database", "label": "IndexedDB", "sublabel": "данные приложения", "pos": [690, 340], "size": [150, 70] },
+    { "id": "export", "type": "frontend", "label": "Экспорт", "sublabel": "PNG · SVG · Печать", "pos": [900, 140], "size": [150, 70] },
+    { "id": "sync", "type": "backend", "label": "Менеджер синхронизации", "sublabel": "md5 · etag · If-Match", "pos": [900, 340], "size": [150, 70] },
+    { "id": "gdrive", "type": "cloud", "label": "Google Drive", "sublabel": "REST API", "pos": [1110, 340], "size": [150, 70] }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "На устройстве · работает без сети",
+      "wraps": ["devices", "ui", "analyzer", "engine", "project", "indexeddb", "export"],
+      "pad": 24
+    }
+  ],
+  "connections": [
+    { "from": "devices", "to": "ui", "label": "ввод эскиза", "variant": "emphasis" },
+    { "from": "ui", "to": "analyzer", "label": "растр эскиза", "variant": "default", "labelAt": [345, 224] },
+    { "from": "analyzer", "to": "engine", "label": "контуры", "variant": "default" },
+    { "from": "ui", "to": "engine", "label": "команды", "variant": "emphasis" },
+    { "from": "engine", "to": "project", "label": "сохранение", "variant": "emphasis" },
+    { "from": "project", "to": "indexeddb", "label": "черновики", "variant": "dashed", "labelAt": [765, 224] },
+    { "from": "project", "to": "export", "label": "рендер", "variant": "emphasis" },
+    { "from": "project", "to": "sync", "label": ".tattoo.json", "variant": "default" },
+    { "from": "sync", "to": "gdrive", "label": "REST · If-Match", "variant": "emphasis", "labelAt": [1080, 424] },
+    { "from": "gdrive", "to": "sync", "label": "412 · etag", "variant": "dashed", "labelAt": [1080, 308] }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Офлайн-ядро",
+      "items": [
+        "Весь контур от эскиза до печати работает на устройстве без сети",
+        "Анализ эскиза и движок линворка — на Canvas 2D",
+        "Проект хранится локально в файле .tattoo.json, черновики — в IndexedDB"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Конфликты по 412",
+      "items": [
+        "Сравнение md5 и etag перед записью в Google Drive",
+        "Запрос с If-Match; при ответе 412 выбор версии пользователем"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Экспорт",
+      "items": [
+        "PNG и SVG для цифрового использования",
+        "Печать напрямую из локального проекта"
+      ]
+    }
+  ]
+}

@@ -1,6 +1,10 @@
-export type ToolId = 'brush' | 'eraser' | 'line' | 'pan' | 'picker'
+export type ToolId = 'object' | 'brush' | 'eraser' | 'line' | 'shape' | 'pen' | 'fill' | 'area' | 'lasso' | 'pan' | 'picker'
 export type BrushId = 'fineline' | 'traditional' | 'blackwork' | 'dotwork' | 'whip' | 'sketch' | 'shader'
 export type PressureCurve = 'soft' | 'linear' | 'firm'
+export type LayerKind = 'paint' | 'image' | 'vector'
+export type ShapeKind = 'rectangle' | 'ellipse' | 'arc'
+export type SymmetryMode = 'off' | 'vertical' | 'radial'
+export type GuideMode = 'none' | 'circle' | 'ellipse'
 
 export interface BrushConfig {
   id: BrushId
@@ -18,6 +22,11 @@ export interface BrushConfig {
   jitter: number
 }
 
+export interface BrushPreset {
+  name: string
+  config: BrushConfig
+}
+
 export interface ScanFilters {
   grayscale: boolean
   contrast: number
@@ -25,10 +34,33 @@ export interface ScanFilters {
   invert: boolean
 }
 
+export interface VectorTransform {
+  x: number
+  y: number
+  scale: number
+  rotation: number
+}
+
+export interface VectorObject {
+  id: string
+  kind: 'stroke' | 'path' | 'shape'
+  shape?: ShapeKind
+  points: [number, number, number][]
+  brush: BrushConfig
+  color: string
+  pen: boolean
+  closed?: boolean
+  fill?: boolean
+  angles?: [number, number]
+  origin?: { x: number; y: number }
+  clips?: SelectionModel[]
+  transform: VectorTransform
+}
+
 export interface LayerModel {
   id: string
   name: string
-  kind: 'paint' | 'image'
+  kind: LayerKind
   visible: boolean
   locked: boolean
   opacity: number
@@ -38,22 +70,35 @@ export interface LayerModel {
   sourceImage?: HTMLImageElement
   transform?: { scale: number; rotation: number; x?: number; y?: number }
   filters?: ScanFilters
+  objects?: VectorObject[]
+  mask?: HTMLCanvasElement
+  maskEnabled?: boolean
+  maskVersion?: number
+  clipToBelow?: boolean
   filterCache?: HTMLCanvasElement
   filterKey?: string
   pixelVersion: number
   dataCache?: { version: number; data: string }
+  maskCache?: { version: number; data: string }
 }
 
 export interface DocModel {
   width: number
   height: number
   title: string
+  dpi: number
+}
+
+export interface SelectionModel {
+  kind: 'rectangle' | 'ellipse' | 'lasso'
+  points: [number, number][]
+  inverse?: boolean
 }
 
 export interface LayerSnapshot {
   id: string
   name: string
-  kind: 'paint' | 'image'
+  kind: LayerKind
   visible: boolean
   locked: boolean
   opacity: number
@@ -62,11 +107,15 @@ export interface LayerSnapshot {
   source?: string
   transform?: { scale: number; rotation: number; x?: number; y?: number }
   filters?: ScanFilters
+  objects?: VectorObject[]
+  maskData?: string
+  maskEnabled?: boolean
+  clipToBelow?: boolean
 }
 
 export interface ProjectSnapshot {
   format: 'trafaret-project'
-  version: 1
+  version: number
   savedAt: string
   doc: DocModel
   layers: LayerSnapshot[]

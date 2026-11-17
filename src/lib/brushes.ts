@@ -66,7 +66,7 @@ export function getSvgPathFromStroke(points: number[][], closed = true) {
   return result
 }
 
-function pathFromPoints(points: StrokePoint[], brush: BrushConfig, complete: boolean, pen: boolean) {
+export function getStrokePathData(points: StrokePoint[], brush: BrushConfig, complete: boolean, pen: boolean) {
   const outline = getStroke(points, {
     size: brush.size,
     thinning: brush.thinning,
@@ -78,7 +78,11 @@ function pathFromPoints(points: StrokePoint[], brush: BrushConfig, complete: boo
     start: { cap: true, taper: brush.taperStart },
     end: { cap: true, taper: brush.taperEnd },
   })
-  const d = getSvgPathFromStroke(outline)
+  return getSvgPathFromStroke(outline)
+}
+
+function pathFromPoints(points: StrokePoint[], brush: BrushConfig, complete: boolean, pen: boolean) {
+  const d = getStrokePathData(points, brush, complete, pen)
   return d ? new Path2D(d) : null
 }
 

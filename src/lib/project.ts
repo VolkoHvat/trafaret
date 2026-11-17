@@ -1,4 +1,5 @@
 import type { DocModel, LayerModel, ProjectSnapshot, ScanFilters } from '../types'
+import { cloneObjects } from './vector'
 
 export const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 
@@ -15,6 +16,24 @@ export function makePaintLayer(doc: DocModel, name = 'Линия'): LayerModel {
     id: uid(), name, kind: 'paint', visible: true, locked: false, opacity: 1,
     blend: 'source-over', canvas: makeCanvas(doc.width, doc.height), pixelVersion: 0,
   }
+}
+
+export function makeVectorLayer(doc: DocModel, name = 'Векторный контур'): LayerModel {
+  return {
+    id: uid(), name, kind: 'vector', visible: true, locked: false, opacity: 1,
+    blend: 'source-over', canvas: makeCanvas(doc.width, doc.height), objects: [], pixelVersion: 0,
+  }
+}
+
+export function createLayerMask(layer: LayerModel) {
+  const mask = makeCanvas(layer.canvas.width, layer.canvas.height)
+  const ctx = mask.getContext('2d')!
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, mask.width, mask.height)
+  layer.mask = mask
+  layer.maskEnabled = true
+  layer.maskVersion = 0
+  return mask
 }
 
 export function loadImage(src: string): Promise<HTMLImageElement> {
@@ -101,24 +120,34 @@ export function getLayerRenderCanvas(layer: LayerModel) {
 
 export function snapshotProject(doc: DocModel, layers: LayerModel[], activeLayerId: string): ProjectSnapshot {
   return {
-    format: 'trafaret-project', version: 1, savedAt: new Date().toISOString(), doc: { ...doc },
+    format: 'trafaret-project', version: 2, savedAt: new Date().toISOString(), doc: { ...doc },
     activeLayerId,
     layers: layers.map((layer) => {
       const data = layer.dataCache?.version === layer.pixelVersion
         ? layer.dataCache.data
         : layer.canvas.toDataURL('image/png')
       layer.dataCache = { version: layer.pixelVersion, data }
+      let maskData: string | undefined
+      if (layer.mask) {
+        const version = layer.maskVersion ?? 0
+        maskData = layer.maskCache?.version === version ? layer.maskCache.data : layer.mask.toDataURL('image/png')
+        layer.maskCache = { version, data: maskData }
+      }
       return {
         id: layer.id, name: layer.name, kind: layer.kind, visible: layer.visible, locked: layer.locked,
         opacity: layer.opacity, blend: layer.blend, data,
         source: layer.source, transform: layer.transform, filters: layer.filters,
+        objects: layer.kind === 'vector' ? cloneObjects(layer.objects) : undefined,
+        maskData, maskEnabled: layer.maskEnabled !== false, clipToBelow: Boolean(layer.clipToBelow),
       }
     }),
   }
 }
 
 export async function restoreProject(snapshot: ProjectSnapshot) {
-  if (snapshot.format !== 'trafaret-project' || snapshot.version !== 1) throw new Error('Это не проект «Трафарета»')
+  if (snapshot.format !== 'trafaret-project' || ![1, 2].includes(snapshot.version)) {
+    throw new Error('Это не проект «Трафарета»')
+  }
   const { doc } = snapshot
   if (!doc || doc.width < 64 || doc.height < 64 || doc.width > 8192 || doc.height > 8192 || !snapshot.layers?.length) {
     throw new Error('Повреждённые размеры или слои проекта')
@@ -126,20 +155,36 @@ export async function restoreProject(snapshot: ProjectSnapshot) {
   const layers: LayerModel[] = []
   for (const saved of snapshot.layers) {
     const canvas = makeCanvas(doc.width, doc.height)
-    const bitmap = await loadImage(saved.data)
-    canvas.getContext('2d')!.drawImage(bitmap, 0, 0)
+    if (saved.data) {
+      const bitmap = await loadImage(saved.data)
+      canvas.getContext('2d')!.drawImage(bitmap, 0, 0)
+    }
+    const kind = saved.kind === 'image' ? 'image' : saved.kind === 'vector' && snapshot.version >= 2 ? 'vector' : 'paint'
     const layer: LayerModel = {
-      id: saved.id || uid(), name: saved.name || 'Слой', kind: saved.kind === 'image' ? 'image' : 'paint',
+      id: saved.id || uid(), name: saved.name || 'Слой', kind,
       visible: saved.visible !== false, locked: Boolean(saved.locked), opacity: saved.opacity ?? 1,
       blend: saved.blend || 'source-over', canvas, source: saved.source,
       transform: saved.transform, filters: saved.filters,
-      pixelVersion: 0, dataCache: { version: 0, data: saved.data },
+      objects: kind === 'vector' ? cloneObjects(saved.objects) : undefined,
+      maskEnabled: saved.maskEnabled !== false, clipToBelow: Boolean(saved.clipToBelow),
+      pixelVersion: 0, dataCache: saved.data ? { version: 0, data: saved.data } : undefined,
     }
     if (saved.source) layer.sourceImage = await loadImage(saved.source)
+    if (saved.maskData) {
+      const mask = makeCanvas(doc.width, doc.height)
+      const bitmap = await loadImage(saved.maskData)
+      mask.getContext('2d')!.drawImage(bitmap, 0, 0)
+      layer.mask = mask
+      layer.maskVersion = 0
+      layer.maskCache = { version: 0, data: saved.maskData }
+    }
     layers.push(layer)
   }
   return {
-    doc: { width: doc.width, height: doc.height, title: String(doc.title || 'Проект') },
+    doc: {
+      width: Math.round(doc.width), height: Math.round(doc.height),
+      title: String(doc.title || 'Проект'), dpi: Math.max(72, Math.min(1200, Number(doc.dpi) || 300)),
+    },
     layers,
     activeLayerId: layers.some((layer) => layer.id === snapshot.activeLayerId) ? snapshot.activeLayerId : layers[layers.length - 1].id,
   }

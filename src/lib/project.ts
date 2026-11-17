@@ -13,7 +13,7 @@ export function makeCanvas(width: number, height: number) {
 export function makePaintLayer(doc: DocModel, name = 'Линия'): LayerModel {
   return {
     id: uid(), name, kind: 'paint', visible: true, locked: false, opacity: 1,
-    blend: 'source-over', canvas: makeCanvas(doc.width, doc.height),
+    blend: 'source-over', canvas: makeCanvas(doc.width, doc.height), pixelVersion: 0,
   }
 }
 
@@ -44,11 +44,12 @@ export function redrawImageLayer(layer: LayerModel) {
   const fit = Math.min(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight) * 0.92
   ctx.clearRect(0, 0, canvas.width, canvas.height)
   ctx.save()
-  ctx.translate(canvas.width / 2, canvas.height / 2)
+  ctx.translate(canvas.width / 2 + (layer.transform?.x ?? 0), canvas.height / 2 + (layer.transform?.y ?? 0))
   ctx.rotate(rotation)
   ctx.scale(fit * scale, fit * scale)
   ctx.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2)
   ctx.restore()
+  layer.pixelVersion += 1
   layer.filterKey = undefined
 }
 
@@ -102,11 +103,17 @@ export function snapshotProject(doc: DocModel, layers: LayerModel[], activeLayer
   return {
     format: 'trafaret-project', version: 1, savedAt: new Date().toISOString(), doc: { ...doc },
     activeLayerId,
-    layers: layers.map((layer) => ({
-      id: layer.id, name: layer.name, kind: layer.kind, visible: layer.visible, locked: layer.locked,
-      opacity: layer.opacity, blend: layer.blend, data: layer.canvas.toDataURL('image/png'),
-      source: layer.source, transform: layer.transform, filters: layer.filters,
-    })),
+    layers: layers.map((layer) => {
+      const data = layer.dataCache?.version === layer.pixelVersion
+        ? layer.dataCache.data
+        : layer.canvas.toDataURL('image/png')
+      layer.dataCache = { version: layer.pixelVersion, data }
+      return {
+        id: layer.id, name: layer.name, kind: layer.kind, visible: layer.visible, locked: layer.locked,
+        opacity: layer.opacity, blend: layer.blend, data,
+        source: layer.source, transform: layer.transform, filters: layer.filters,
+      }
+    }),
   }
 }
 
@@ -126,6 +133,7 @@ export async function restoreProject(snapshot: ProjectSnapshot) {
       visible: saved.visible !== false, locked: Boolean(saved.locked), opacity: saved.opacity ?? 1,
       blend: saved.blend || 'source-over', canvas, source: saved.source,
       transform: saved.transform, filters: saved.filters,
+      pixelVersion: 0, dataCache: { version: 0, data: saved.data },
     }
     if (saved.source) layer.sourceImage = await loadImage(saved.source)
     layers.push(layer)

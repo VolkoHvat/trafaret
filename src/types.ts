@@ -36,10 +36,12 @@ export interface LayerModel {
   canvas: HTMLCanvasElement
   source?: string
   sourceImage?: HTMLImageElement
-  transform?: { scale: number; rotation: number }
+  transform?: { scale: number; rotation: number; x?: number; y?: number }
   filters?: ScanFilters
   filterCache?: HTMLCanvasElement
   filterKey?: string
+  pixelVersion: number
+  dataCache?: { version: number; data: string }
 }
 
 export interface DocModel {
@@ -58,7 +60,7 @@ export interface LayerSnapshot {
   blend: GlobalCompositeOperation
   data: string
   source?: string
-  transform?: { scale: number; rotation: number }
+  transform?: { scale: number; rotation: number; x?: number; y?: number }
   filters?: ScanFilters
 }
 

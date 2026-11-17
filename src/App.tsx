@@ -10,30 +10,46 @@ import { BrushPanel } from './components/BrushPanel'
 import { LayersPanel } from './components/LayersPanel'
 import { ScanPanel } from './components/ScanPanel'
 import { StudioDialog } from './components/UI'
-import { DEFAULT_BRUSHES } from './lib/brushes'
+import { BRUSH_ORDER, DEFAULT_BRUSHES } from './lib/brushes'
 import {
   downloadBlob, fileToDataURL, loadImage, makeCanvas, makePaintLayer, redrawImageLayer,
   restoreProject, safeFilename, snapshotProject, uid,
 } from './lib/project'
-import type { BrushId, DocModel, LayerModel, ProjectSnapshot, ToolId, ViewState } from './types'
+import type { BrushConfig, BrushId, DocModel, LayerModel, ProjectSnapshot, ToolId, ViewState } from './types'
 import './App.css'
 
 const AUTOSAVE_KEY = 'trafaret-autosave-v1'
+const SETTINGS_KEY = 'trafaret-settings-v1'
 const initialDoc: DocModel = { width: 2048, height: 2048, title: 'Новый эскиз' }
+
+interface WorkspaceSettings {
+  brushId?: BrushId
+  brushes?: Partial<Record<BrushId, Partial<BrushConfig>>>
+  color?: string
+  stylusOnly?: boolean
+}
+
+function readWorkspaceSettings(): WorkspaceSettings {
+  try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') as WorkspaceSettings }
+  catch { return {} }
+}
 const initialView: ViewState = { zoom: 0.25, panX: 80, panY: 80 }
 type ModalId = 'new' | 'export' | 'help' | null
 
 export default function App() {
+  const workspaceSettings = useRef(readWorkspaceSettings()).current
   const [doc, setDoc] = useState<DocModel>(initialDoc)
   const [layers, setLayers] = useState<LayerModel[]>(() => [makePaintLayer(initialDoc, 'Линия 1')])
   const [activeLayerId, setActiveLayerId] = useState(() => layers[0].id)
   const [tool, setTool] = useState<ToolId>('brush')
-  const [brushId, setBrushId] = useState<BrushId>('fineline')
-  const [brushes, setBrushes] = useState(() => ({ ...DEFAULT_BRUSHES }))
-  const [color, setColor] = useState('#171914')
+  const [brushId, setBrushId] = useState<BrushId>(() => workspaceSettings.brushId && BRUSH_ORDER.includes(workspaceSettings.brushId) ? workspaceSettings.brushId : 'fineline')
+  const [brushes, setBrushes] = useState<Record<BrushId, BrushConfig>>(() => Object.fromEntries(
+    BRUSH_ORDER.map((id) => [id, { ...DEFAULT_BRUSHES[id], ...workspaceSettings.brushes?.[id] }]),
+  ) as Record<BrushId, BrushConfig>)
+  const [color, setColor] = useState(workspaceSettings.color ?? '#171914')
   const [symmetry, setSymmetry] = useState(false)
   const [stencil, setStencil] = useState(false)
-  const [stylusOnly, setStylusOnly] = useState(true)
+  const [stylusOnly, setStylusOnly] = useState(workspaceSettings.stylusOnly ?? true)
   const [flipped, setFlipped] = useState(false)
   const [view, setView] = useState<ViewState>(initialView)
   const [renderToken, setRenderToken] = useState(0)
@@ -56,6 +72,11 @@ export default function App() {
   const activeLayer = layers.find((layer) => layer.id === activeLayerId)
   const activeImage = activeLayer?.kind === 'image' ? activeLayer : undefined
   const currentBrush = brushes[brushId]
+
+  useEffect(() => {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ brushId, brushes, color, stylusOnly })) }
+    catch { /* Settings persistence is optional when storage is unavailable. */ }
+  }, [brushId, brushes, color, stylusOnly])
 
   const showNotice = useCallback((message: string) => setNotice(message), [])
   useEffect(() => {
@@ -146,8 +167,8 @@ export default function App() {
       const image = await loadImage(source)
       const layer: LayerModel = {
         id: uid(), name: `Скан · ${file.name.slice(0, 28)}`, kind: 'image', visible: true, locked: true,
-        opacity: 0.62, blend: 'multiply', canvas: makeCanvas(doc.width, doc.height), source,
-        sourceImage: image, transform: { scale: 1, rotation: 0 },
+        opacity: 0.62, blend: 'multiply', canvas: makeCanvas(doc.width, doc.height), source, pixelVersion: 0,
+        sourceImage: image, transform: { scale: 1, rotation: 0, x: 0, y: 0 },
         filters: { grayscale: true, contrast: 112, threshold: 0, invert: false },
       }
       redrawImageLayer(layer)
@@ -180,6 +201,7 @@ export default function App() {
     if (!activeLayer) return
     const index = layers.indexOf(activeLayer)
     const next = layers.filter((layer) => layer.id !== activeLayer.id)
+    studioRef.current?.dropHistoryFor(activeLayer.id)
     changeLayers(next)
     setActiveLayerId(next[Math.min(index, next.length - 1)].id)
   }
@@ -196,12 +218,12 @@ export default function App() {
     setActiveLayerId(copy.id)
   }
 
-  const exportImage = async (transparent: boolean, stencilMode: boolean) => {
+  const exportImage = async (transparent: boolean, stencilMode: boolean, onlyActive = false) => {
     if (!studioRef.current) return
     setExporting(true)
     try {
-      const blob = await studioRef.current.exportImage(transparent, stencilMode)
-      const suffix = stencilMode ? '-stencil' : transparent ? '-transparent' : ''
+      const blob = await studioRef.current.exportImage(transparent, stencilMode, onlyActive)
+      const suffix = onlyActive ? '-active-layer' : stencilMode ? '-stencil' : transparent ? '-transparent' : ''
       downloadBlob(blob, `${safeFilename(doc.title)}${suffix}.png`)
       setModal(null)
       showNotice('PNG экспортирован')
@@ -242,6 +264,7 @@ export default function App() {
   }, [brushId, modal, saveProject])
 
   useEffect(() => {
+    if (!import.meta.env.DEV) return
     const debug = {
       getState: () => ({
         doc: { ...doc }, layers: layers.map((layer) => ({ id: layer.id, name: layer.name, kind: layer.kind, visible: layer.visible, locked: layer.locked })),
@@ -364,6 +387,7 @@ export default function App() {
         <div className="export-list">
           <button className="export-option" disabled={exporting} onClick={() => exportImage(false, false)}><strong>PNG с фоном</strong><span>Для показа клиенту и публикации</span></button>
           <button className="export-option" disabled={exporting} onClick={() => exportImage(true, false)}><strong>Прозрачный PNG</strong><span>Для макета, печати и других редакторов</span></button>
+          <button className="export-option" disabled={exporting} onClick={() => exportImage(true, false, true)}><strong>PNG активного слоя</strong><span>Только чистая линия без скана и остальных слоёв</span></button>
           <button className="export-option" disabled={exporting} onClick={() => exportImage(false, true)}><strong>Трафарет PNG</strong><span>Чёрно-белая высококонтрастная версия</span></button>
           <button className="export-option project-option" onClick={saveProject}><strong>Проект со слоями</strong><span>Файл .tattoo.json для продолжения работы</span></button>
         </div>

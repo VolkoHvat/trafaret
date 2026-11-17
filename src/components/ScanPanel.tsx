@@ -14,6 +14,18 @@ export function ScanPanel({ layer, onImport, onUpdate }: {
     if (!layer || !filters) return
     onUpdate({ filters: { ...filters, ...patch }, filterKey: undefined })
   }
+  const updateTransform = (patch: { scale?: number; rotation?: number; x?: number; y?: number }) => {
+    if (!layer) return
+    onUpdate({
+      transform: {
+        scale: layer.transform?.scale ?? 1,
+        rotation: layer.transform?.rotation ?? 0,
+        x: layer.transform?.x ?? 0,
+        y: layer.transform?.y ?? 0,
+        ...patch,
+      },
+    })
+  }
   return (
     <section className="scan-section">
       <PanelHeading eyebrow="Reference" title="Скан и референс" />
@@ -28,8 +40,10 @@ export function ScanPanel({ layer, onImport, onUpdate }: {
       ) : (
         <div className="settings-group scan-settings">
           <div className="group-title"><ScanLine size={14} /><span>{layer.name}</span></div>
-          <Slider label="Масштаб" min={0.1} max={3} step={0.05} value={layer.transform?.scale ?? 1} onChange={(scale) => onUpdate({ transform: { scale, rotation: layer.transform?.rotation ?? 0 } })} />
-          <Slider label="Поворот" min={-180} max={180} value={layer.transform?.rotation ?? 0} unit="°" onChange={(rotation) => onUpdate({ transform: { scale: layer.transform?.scale ?? 1, rotation } })} />
+          <Slider label="Масштаб" min={0.1} max={3} step={0.05} value={layer.transform?.scale ?? 1} onChange={(scale) => updateTransform({ scale })} />
+          <Slider label="Поворот" min={-180} max={180} value={layer.transform?.rotation ?? 0} unit="°" onChange={(rotation) => updateTransform({ rotation })} />
+          <Slider label="Смещение X" min={-2000} max={2000} value={layer.transform?.x ?? 0} unit=" px" onChange={(x) => updateTransform({ x })} />
+          <Slider label="Смещение Y" min={-2000} max={2000} value={layer.transform?.y ?? 0} unit=" px" onChange={(y) => updateTransform({ y })} />
           <Slider label="Контраст" min={40} max={260} value={filters.contrast} unit="%" onChange={(contrast) => updateFilters({ contrast })} />
           <Slider label="Порог линии" min={0} max={255} value={filters.threshold} onChange={(threshold) => updateFilters({ threshold })} />
           <p className="control-hint">0 — без постеризации. Увеличивайте порог для чистого трафарета.</p>

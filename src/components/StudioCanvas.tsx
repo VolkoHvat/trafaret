@@ -8,7 +8,8 @@ export interface StudioHandle {
   redo: () => void
   clearActive: () => void
   fitView: () => void
-  exportImage: (transparent: boolean, stencil: boolean) => Promise<Blob>
+  exportImage: (transparent: boolean, stencil: boolean, onlyActive?: boolean) => Promise<Blob>
+  dropHistoryFor: (layerId: string) => void
   historyPixels: () => number
 }
 
@@ -34,12 +35,14 @@ interface Props {
 
 interface CurrentStroke {
   pointerId: number
+  layerId: string
   points: StrokePoint[]
   pen: boolean
   brush: BrushConfig
   color: string
   eraser: boolean
   line: boolean
+  bounds: { minX: number; minY: number; maxX: number; maxY: number }
 }
 
 interface Rect { x: number; y: number; width: number; height: number }
@@ -47,6 +50,14 @@ interface HistoryEntry { layerId: string; rect: Rect; before: ImageData; after: 
 
 const MAX_HISTORY_PIXELS = 24_000_000
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
+
+function includePoint(current: CurrentStroke, point: StrokePoint) {
+  const bounds = current.bounds
+  bounds.minX = Math.min(bounds.minX, point[0])
+  bounds.minY = Math.min(bounds.minY, point[1])
+  bounds.maxX = Math.max(bounds.maxX, point[0])
+  bounds.maxY = Math.max(bounds.maxY, point[1])
+}
 
 export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanvas(props, ref) {
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -85,7 +96,12 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     propsRef.current.onHistoryChange(historyRef.current.length > 0, redoRef.current.length > 0)
   }, [])
 
-  const composeTo = useCallback((target: HTMLCanvasElement, background: boolean, stencilMode: boolean) => {
+  useEffect(() => {
+    updateHistoryState()
+    return () => { propsRef.current.onHistoryChange(false, false) }
+  }, [updateHistoryState])
+
+  const composeTo = useCallback((target: HTMLCanvasElement, background: boolean, stencilMode: boolean, onlyActive = false) => {
     ensureBuffers()
     const { doc, layers, activeLayerId, symmetry } = propsRef.current
     const ctx = target.getContext('2d')!
@@ -96,9 +112,9 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     }
     const current = currentRef.current
     for (const layer of layers) {
-      if (!layer.visible) continue
+      if (!layer.visible || (onlyActive && layer.id !== activeLayerId)) continue
       let source = getLayerRenderCanvas(layer)
-      if (current && layer.id === activeLayerId) {
+      if (current && layer.id === current.layerId) {
         const preview = previewRef.current!
         const pctx = preview.getContext('2d')!
         pctx.clearRect(0, 0, doc.width, doc.height)
@@ -140,7 +156,10 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
   }, [props.layers, props.doc, props.stencil, props.renderToken, ensureBuffers, scheduleRender])
 
   useEffect(() => () => {
-    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
+    if (frameRef.current !== null) {
+      cancelAnimationFrame(frameRef.current)
+      frameRef.current = null
+    }
   }, [])
 
   const pushHistory = useCallback((entry: HistoryEntry) => {
@@ -159,6 +178,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     if (!layer) return
     const { rect } = entry
     layer.canvas.getContext('2d')!.putImageData(entry[side], rect.x, rect.y)
+    layer.pixelVersion += 1
     layer.filterKey = undefined
     propsRef.current.onMutated()
     scheduleRender()
@@ -166,6 +186,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
 
   useImperativeHandle(ref, () => ({
     undo: () => {
+      if (currentRef.current) return
       const entry = historyRef.current.pop()
       if (!entry) return
       historySizeRef.current -= entry.rect.width * entry.rect.height
@@ -174,6 +195,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       updateHistoryState()
     },
     redo: () => {
+      if (currentRef.current) return
       const entry = redoRef.current.pop()
       if (!entry) return
       historyRef.current.push(entry)
@@ -191,6 +213,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       const ctx = layer.canvas.getContext('2d')!
       const before = ctx.getImageData(0, 0, width, height)
       ctx.clearRect(0, 0, width, height)
+      layer.pixelVersion += 1
       const after = ctx.getImageData(0, 0, width, height)
       pushHistory({ layerId: layer.id, rect: { x: 0, y: 0, width, height }, before, after })
       propsRef.current.onMutated()
@@ -208,10 +231,10 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       })
       void view
     },
-    exportImage: async (transparent: boolean, stencilMode: boolean) => {
+    exportImage: async (transparent: boolean, stencilMode: boolean, onlyActive = false) => {
       const { doc } = propsRef.current
       const output = makeCanvas(doc.width, doc.height)
-      composeTo(output, !transparent, stencilMode)
+      composeTo(output, !transparent, stencilMode, onlyActive)
       if (stencilMode) {
         const ctx = output.getContext('2d')!
         const image = ctx.getImageData(0, 0, output.width, output.height)
@@ -225,6 +248,12 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
         ctx.putImageData(image, 0, 0)
       }
       return new Promise<Blob>((resolve, reject) => output.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Экспорт не удался')), 'image/png'))
+    },
+    dropHistoryFor: (layerId: string) => {
+      historyRef.current = historyRef.current.filter((entry) => entry.layerId !== layerId)
+      redoRef.current = redoRef.current.filter((entry) => entry.layerId !== layerId)
+      historySizeRef.current = historyRef.current.reduce((sum, entry) => sum + entry.rect.width * entry.rect.height, 0)
+      updateHistoryState()
     },
     historyPixels: () => historySizeRef.current,
   }), [composeTo, pushHistory, restoreHistory, scheduleRender, updateHistoryState])
@@ -256,25 +285,31 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
   const finishStroke = useCallback(() => {
     const current = currentRef.current
     if (!current) return
-    const { doc, layers, activeLayerId, symmetry } = propsRef.current
-    const layer = layers.find((item) => item.id === activeLayerId)
-    if (!layer) return
+    const { doc, layers, symmetry } = propsRef.current
+    const layer = layers.find((item) => item.id === current.layerId)
+    if (!layer) {
+      currentRef.current = null
+      strokeRef.current!.getContext('2d')!.clearRect(0, 0, doc.width, doc.height)
+      scheduleRender()
+      return
+    }
     redrawCurrent(true)
     const ctx = layer.canvas.getContext('2d')!
     ctx.save()
     ctx.globalCompositeOperation = current.eraser ? 'destination-out' : 'source-over'
     ctx.drawImage(strokeRef.current!, 0, 0)
     ctx.restore()
+    layer.pixelVersion += 1
     layer.filterKey = undefined
 
-    const allPoints = symmetry
-      ? [...current.points, ...current.points.map(([x, y, p]) => [doc.width - x, y, p] as StrokePoint)]
-      : current.points
+    const { bounds } = current
     const pad = current.brush.size * 2 + 20
-    const minX = clamp(Math.floor(Math.min(...allPoints.map((p) => p[0])) - pad), 0, doc.width - 1)
-    const minY = clamp(Math.floor(Math.min(...allPoints.map((p) => p[1])) - pad), 0, doc.height - 1)
-    const maxX = clamp(Math.ceil(Math.max(...allPoints.map((p) => p[0])) + pad), minX + 1, doc.width)
-    const maxY = clamp(Math.ceil(Math.max(...allPoints.map((p) => p[1])) + pad), minY + 1, doc.height)
+    const boundsMinX = symmetry ? Math.min(bounds.minX, doc.width - bounds.maxX) : bounds.minX
+    const boundsMaxX = symmetry ? Math.max(bounds.maxX, doc.width - bounds.minX) : bounds.maxX
+    const minX = clamp(Math.floor(boundsMinX - pad), 0, doc.width - 1)
+    const minY = clamp(Math.floor(bounds.minY - pad), 0, doc.height - 1)
+    const maxX = clamp(Math.ceil(boundsMaxX + pad), minX + 1, doc.width)
+    const maxY = clamp(Math.ceil(bounds.maxY + pad), minY + 1, doc.height)
     const rect = { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
     const before = beforeRef.current!.getContext('2d')!.getImageData(rect.x, rect.y, rect.width, rect.height)
     const after = ctx.getImageData(rect.x, rect.y, rect.width, rect.height)
@@ -315,7 +350,9 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     const point = clientToDoc(event.clientX, event.clientY)
     if (tool === 'picker') {
       const ctx = canvasRef.current!.getContext('2d')!
-      const pixel = ctx.getImageData(Math.floor(point[0]), Math.floor(point[1]), 1, 1).data
+      const pixelX = clamp(Math.floor(point[0]), 0, propsRef.current.doc.width - 1)
+      const pixelY = clamp(Math.floor(point[1]), 0, propsRef.current.doc.height - 1)
+      const pixel = ctx.getImageData(pixelX, pixelY, 1, 1).data
       propsRef.current.onPickColor(`#${[pixel[0], pixel[1], pixel[2]].map((v) => v.toString(16).padStart(2, '0')).join('')}`)
       return
     }
@@ -332,8 +369,9 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     point[2] = pen ? event.pressure || 0.5 : 0.5
     const eraser = tool === 'eraser'
     currentRef.current = {
-      pointerId: event.pointerId, points: [point], pen, color, eraser, line: tool === 'line',
+      pointerId: event.pointerId, layerId: layer.id, points: [point], pen, color, eraser, line: tool === 'line',
       brush: eraser ? { ...brush, id: 'traditional', opacity: 1, passes: 1, jitter: 0, size: brush.size * 1.35 } : brush,
+      bounds: { minX: point[0], minY: point[1], maxX: point[0], maxY: point[1] },
     }
     redrawCurrent(false)
     scheduleRender()
@@ -378,9 +416,13 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       if (current.line) {
         if (current.points.length === 1) current.points.push(point)
         else current.points[1] = point
+        includePoint(current, point)
       } else {
         const last = current.points[current.points.length - 1]
-        if (Math.hypot(point[0] - last[0], point[1] - last[1]) > 0.25) current.points.push(point)
+        if (Math.hypot(point[0] - last[0], point[1] - last[1]) > 0.25) {
+          current.points.push(point)
+          includePoint(current, point)
+        }
       }
     }
     redrawCurrent(false)

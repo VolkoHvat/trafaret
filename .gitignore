@@ -22,3 +22,23 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Secrets and credentials — never publish (example files stay tracked)
+.env
+.env.*
+!.env.example
+!.env.sample
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.key
+*.pem
+id_rsa*
+*password*
+*passwd*
+google-services.json
+local.properties
+**/android/local.properties
+!**/*.example.json
+!**/sync-config.example.json

@@ -12,6 +12,7 @@
     "audit:runtime": "node scripts/runtime-audit.mjs",
     "audit:electron": "node scripts/electron-audit.mjs",
     "audit:production": "node scripts/production-regression.mjs",
+    "audit:strictmode": "node scripts/strictmode-regression.mjs",
     "icon": "node scripts/make-ico.mjs",
     "desktop:build": "esbuild desktop/src/main.ts --bundle --platform=node --format=esm --external:electron --outfile=desktop/dist/main.js && esbuild desktop/src/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=desktop/dist/preload.cjs",
     "desktop:typecheck": "tsc -p desktop/tsconfig.json",

@@ -13,7 +13,8 @@ import {
 } from '../lib/raster-history'
 import {
   cloneObjects, defaultVectorTransform, ensureObjectOrigin, hitVectorObject,
-  objectBounds, objectOrigin, renderVectorLayer, renderVectorObject, vectorId,
+  isPristineEmptyLayer, objectBounds, objectOrigin, renderVectorLayer,
+  renderVectorObject, vectorId,
 } from '../lib/vector'
 
 export interface StudioHandle {
@@ -227,7 +228,12 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
 
   const ensureBuffers = useCallback(() => {
     const { width, height } = propsRef.current.doc
-    canvasRef.current?.getContext('2d', { willReadFrequently: true })
+    const visible = canvasRef.current
+    if (visible && (visible.width !== width || visible.height !== height)) {
+      visible.width = width
+      visible.height = height
+    }
+    visible?.getContext('2d', { willReadFrequently: true })
     for (const bufferRef of [strokeRef, beforeRef, previewRef, maskPreviewRef, maskedRef, clippedRef, belowRef]) {
       const buffer = bufferRef.current
       if (buffer && (buffer.width !== width || buffer.height !== height)) {
@@ -275,7 +281,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
   const composeTo = useCallback((target: HTMLCanvasElement, background: boolean, stencilMode: boolean, onlyActive = false, scale = 1) => {
     ensureBuffers()
     const { doc, layers, activeLayerId, maskEditing } = propsRef.current
-    const ctx = target.getContext('2d')!
+    const ctx = target.getContext('2d', { willReadFrequently: true })!
     ctx.clearRect(0, 0, target.width, target.height)
     if (background) {
       ctx.fillStyle = stencilMode ? '#f7f6f0' : '#f3f1e9'
@@ -297,14 +303,20 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     ctx.scale(scale, scale)
     layers.forEach(layer => {
       if (!layer.visible || (onlyActive && layer.id !== activeLayerId)) return
-      let source = getLayerRenderCanvas(layer)
       const contentPreview = current && current.layerId === layer.id && current.channel === 'content'
       const movePreview = rasterMove && rasterMove.layerId === layer.id && rasterMove.channel === 'content'
+      // A pristine blank layer draws nothing; skip it unless a live preview
+      // (current stroke / raster move) must be composited for it. canvas
+      // dimensions stay doc-sized either way.
+      let source: HTMLCanvasElement | null = isPristineEmptyLayer(layer) && !contentPreview && !movePreview
+        ? null
+        : getLayerRenderCanvas(layer)
       if (contentPreview || movePreview) {
         const preview = obtainBuffer(previewRef)
-        const pctx = preview.getContext('2d')!
+        const pctx = preview.getContext('2d', { willReadFrequently: true })!
         pctx.clearRect(0, 0, doc.width, doc.height)
-        pctx.drawImage(source, 0, 0)
+        // Non-null: a preview forces getLayerRenderCanvas above.
+        pctx.drawImage(source!, 0, 0)
         if (contentPreview && current) {
           pctx.save()
           pctx.globalCompositeOperation = current.eraser ? 'destination-out' : 'source-over'
@@ -324,7 +336,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       let activeMask = layer.mask
       if (current && current.layerId === layer.id && current.channel === 'mask' && layer.mask) {
         const maskPreview = obtainBuffer(maskPreviewRef)
-        const mctx = maskPreview.getContext('2d')!
+        const mctx = maskPreview.getContext('2d', { willReadFrequently: true })!
         mctx.clearRect(0, 0, doc.width, doc.height)
         mctx.drawImage(layer.mask, 0, 0)
         mctx.save()
@@ -335,7 +347,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       }
       if (rasterMove && rasterMove.layerId === layer.id && rasterMove.channel === 'mask' && layer.mask) {
         const maskPreview = obtainBuffer(maskPreviewRef)
-        const mctx = maskPreview.getContext('2d')!
+        const mctx = maskPreview.getContext('2d', { willReadFrequently: true })!
         mctx.clearRect(0, 0, doc.width, doc.height)
         mctx.drawImage(layer.mask, 0, 0)
         mctx.save()
@@ -345,9 +357,9 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
         mctx.drawImage(rasterMove.cut, rasterMove.bounds.x + rasterMove.dx, rasterMove.bounds.y + rasterMove.dy)
         activeMask = maskPreview
       }
-      if (activeMask && layer.maskEnabled !== false) {
+      if (source && activeMask && layer.maskEnabled !== false) {
         const masked = obtainBuffer(maskedRef)
-        const mctx = masked.getContext('2d')!
+        const mctx = masked.getContext('2d', { willReadFrequently: true })!
         mctx.clearRect(0, 0, doc.width, doc.height)
         mctx.globalCompositeOperation = 'source-over'
         mctx.drawImage(source, 0, 0)
@@ -356,9 +368,9 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
         mctx.globalCompositeOperation = 'source-over'
         source = masked
       }
-      if (layer.clipToBelow && hasBelow && !onlyActive) {
+      if (source && layer.clipToBelow && hasBelow && !onlyActive) {
         const clipped = obtainBuffer(clippedRef)
-        const cctx = clipped.getContext('2d')!
+        const cctx = clipped.getContext('2d', { willReadFrequently: true })!
         cctx.clearRect(0, 0, doc.width, doc.height)
         cctx.globalCompositeOperation = 'source-over'
         cctx.drawImage(source, 0, 0)
@@ -367,18 +379,24 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
         cctx.globalCompositeOperation = 'source-over'
         source = clipped
       }
-      ctx.save()
-      ctx.globalAlpha = layer.opacity
-      ctx.globalCompositeOperation = layer.blend
-      if (stencilMode) ctx.filter = 'grayscale(1) contrast(1.55)'
-      ctx.drawImage(source, 0, 0)
-      ctx.restore()
+      if (source) {
+        ctx.save()
+        ctx.globalAlpha = layer.opacity
+        ctx.globalCompositeOperation = layer.blend
+        if (stencilMode) ctx.filter = 'grayscale(1) contrast(1.55)'
+        ctx.drawImage(source, 0, 0)
+        ctx.restore()
+      }
       if (belowNeeded) {
         const below = obtainBuffer(belowRef)
-        const bctx = below.getContext('2d')!
+        const bctx = below.getContext('2d', { willReadFrequently: true })!
         bctx.clearRect(0, 0, doc.width, doc.height)
-        bctx.globalCompositeOperation = 'source-over'
-        bctx.drawImage(source, 0, 0)
+        if (source) {
+          bctx.globalCompositeOperation = 'source-over'
+          bctx.drawImage(source, 0, 0)
+        }
+        // A skipped pristine layer leaves a transparent below, so a clipped
+        // layer above it stays hidden instead of seeing stale buffer pixels.
       }
       hasBelow = true
     })
@@ -484,7 +502,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     const canvas = canvasRef.current
     if (!canvas) return
     composeTo(canvas, true, propsRef.current.stencil)
-    drawOverlay(canvas.getContext('2d')!)
+    drawOverlay(canvas.getContext('2d', { willReadFrequently: true })!)
   }, [composeTo, drawOverlay])
 
   const scheduleRender = useCallback(() => {
@@ -501,10 +519,17 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     props.maskEditing, ensureBuffers, scheduleRender,
   ])
 
-  useEffect(() => () => {
+  useLayoutEffect(() => () => {
     if (frameRef.current !== null) {
       cancelAnimationFrame(frameRef.current)
       frameRef.current = null
+    }
+    // Unmount only: free the old document's visible backing store before the
+    // refs are dropped. Regular renders never shrink the visible canvas.
+    const visible = canvasRef.current
+    if (visible) {
+      visible.width = 1
+      visible.height = 1
     }
     releaseBuffer(strokeRef)
     releaseBuffer(beforeRef)
@@ -557,7 +582,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     } else {
       const canvas = entry.channel === 'mask' ? layer.mask : layer.canvas
       if (!canvas) return
-      canvas.getContext('2d')!.putImageData(decodeRasterImage(entry[side]), entry.rect.x, entry.rect.y)
+      canvas.getContext('2d', { willReadFrequently: true })!.putImageData(decodeRasterImage(entry[side]), entry.rect.x, entry.rect.y)
       if (entry.channel === 'mask') layer.maskVersion = (layer.maskVersion ?? 0) + 1
       else {
         layer.pixelVersion += 1
@@ -591,7 +616,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     } else {
       const canvas = maskEditing ? layer.mask : layer.canvas
       if (!canvas) return
-      const ctx = canvas.getContext('2d')!
+      const ctx = canvas.getContext('2d', { willReadFrequently: true })!
       const full = { x: 0, y: 0, width: doc.width, height: doc.height }
       let rect = full
       if (selection && !selection.inverse) {
@@ -699,7 +724,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       const output = makeCanvas(doc.width, doc.height)
       composeTo(output, !transparent, stencilMode, onlyActive)
       if (stencilMode) {
-        const ctx = output.getContext('2d')!
+        const ctx = output.getContext('2d', { willReadFrequently: true })!
         const image = ctx.getImageData(0, 0, output.width, output.height)
         for (let i = 0; i < image.data.length; i += 4) {
           const gray = image.data[i] * 0.2126 + image.data[i + 1] * 0.7152 + image.data[i + 2] * 0.0722
@@ -733,7 +758,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       try {
         // Чистый видимый composite: без фона, трафаретного фильтра и overlay.
         composeTo(sample, false, false, false, scale)
-        image = sample.getContext('2d')!.getImageData(0, 0, sampleWidth, sampleHeight)
+        image = sample.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, sampleWidth, sampleHeight)
       } finally {
         // Сразу отпускаем backing store, чтобы не держать полноразмерный анализ.
         sample.width = 1
@@ -763,7 +788,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     if (!current) return
     const { doc, selection } = propsRef.current
     const canvas = obtainBuffer(strokeRef)
-    const ctx = canvas.getContext('2d')!
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!
     ctx.clearRect(0, 0, doc.width, doc.height)
     ctx.save()
     clipToSelection(ctx, selection, doc.width, doc.height)
@@ -809,7 +834,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       propsRef.current.onSelectObject(object.id)
     } else {
       const canvas = channelCanvas(layer, current.channel)
-      const ctx = canvas.getContext('2d')!
+      const ctx = canvas.getContext('2d', { willReadFrequently: true })!
       ctx.save()
       clipToSelection(ctx, propsRef.current.selection, doc.width, doc.height)
       ctx.globalCompositeOperation = current.eraser ? 'destination-out' : 'source-over'
@@ -832,7 +857,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
         width: clamp(Math.ceil(maxX + pad) - x, 1, doc.width - x),
         height: clamp(Math.ceil(maxY + pad) - y, 1, doc.height - y),
       }
-      const before = obtainBuffer(beforeRef).getContext('2d')!.getImageData(rect.x, rect.y, rect.width, rect.height)
+      const before = obtainBuffer(beforeRef).getContext('2d', { willReadFrequently: true })!.getImageData(rect.x, rect.y, rect.width, rect.height)
       const after = ctx.getImageData(rect.x, rect.y, rect.width, rect.height)
       pushHistory({
         kind: 'raster', layerId: layer.id, channel: current.channel, rect,
@@ -940,8 +965,9 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     const canvas = channelCanvas(layer, channel)
     if (!canvas) return
     const before = obtainBuffer(beforeRef)
-    before.getContext('2d')!.clearRect(0, 0, doc.width, doc.height)
-    before.getContext('2d')!.drawImage(canvas, 0, 0)
+    const beforeCtx = before.getContext('2d', { willReadFrequently: true })!
+    beforeCtx.clearRect(0, 0, doc.width, doc.height)
+    beforeCtx.drawImage(canvas, 0, 0)
     let rect: Rect = { x: 0, y: 0, width: doc.width, height: doc.height }
     if (!selection.inverse) {
       const bounds = selectionBounds(selection)
@@ -954,7 +980,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       }
     }
     const cut = makeCanvas(rect.width, rect.height)
-    const cctx = cut.getContext('2d')!
+    const cctx = cut.getContext('2d', { willReadFrequently: true })!
     cctx.save()
     cctx.translate(-rect.x, -rect.y)
     clipToSelection(cctx, selection, doc.width, doc.height)
@@ -986,7 +1012,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       return
     }
     const canvas = channelCanvas(layer, move.channel)
-    const ctx = canvas.getContext('2d')!
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!
     ctx.save()
     clipToSelection(ctx, move.selection, doc.width, doc.height)
     ctx.clearRect(0, 0, doc.width, doc.height)
@@ -997,7 +1023,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     const maxX = clamp(Math.ceil(Math.max(move.bounds.x + move.bounds.width, move.bounds.x + move.dx + move.bounds.width)), minX + 1, doc.width)
     const maxY = clamp(Math.ceil(Math.max(move.bounds.y + move.bounds.height, move.bounds.y + move.dy + move.bounds.height)), minY + 1, doc.height)
     const rect = { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
-    const before = obtainBuffer(beforeRef).getContext('2d')!.getImageData(rect.x, rect.y, rect.width, rect.height)
+    const before = obtainBuffer(beforeRef).getContext('2d', { willReadFrequently: true })!.getImageData(rect.x, rect.y, rect.width, rect.height)
     const after = ctx.getImageData(rect.x, rect.y, rect.width, rect.height)
     if (move.channel === 'mask') layer.maskVersion = (layer.maskVersion ?? 0) + 1
     else { layer.pixelVersion += 1; layer.filterKey = undefined }
@@ -1057,7 +1083,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     if (stylusOnly && event.pointerType === 'touch') return
     const point = clientToDoc(event.clientX, event.clientY)
     if (tool === 'picker') {
-      const ctx = canvasRef.current!.getContext('2d')!
+      const ctx = canvasRef.current!.getContext('2d', { willReadFrequently: true })!
       const pixelX = clamp(Math.floor(point[0]), 0, doc.width - 1)
       const pixelY = clamp(Math.floor(point[1]), 0, doc.height - 1)
       const pixel = ctx.getImageData(pixelX, pixelY, 1, 1).data
@@ -1101,12 +1127,13 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       const canvas = channelCanvas(layer, channel)
       if (!canvas) return
       const before = obtainBuffer(beforeRef)
-      before.getContext('2d')!.clearRect(0, 0, doc.width, doc.height)
-      before.getContext('2d')!.drawImage(canvas, 0, 0)
+      const beforeCtx = before.getContext('2d', { willReadFrequently: true })!
+      beforeCtx.clearRect(0, 0, doc.width, doc.height)
+      beforeCtx.drawImage(canvas, 0, 0)
       const rect = floodFill(canvas, point[0], point[1], maskEditing ? '#ffffff' : color, selection)
       if (rect) {
-        const ctx = canvas.getContext('2d')!
-        const beforeData = before.getContext('2d')!.getImageData(rect.x, rect.y, rect.width, rect.height)
+        const ctx = canvas.getContext('2d', { willReadFrequently: true })!
+        const beforeData = beforeCtx.getImageData(rect.x, rect.y, rect.width, rect.height)
         const afterData = ctx.getImageData(rect.x, rect.y, rect.width, rect.height)
         if (maskEditing) layer.maskVersion = (layer.maskVersion ?? 0) + 1
         else { layer.pixelVersion += 1; layer.filterKey = undefined }
@@ -1135,8 +1162,9 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     const channel = maskEditing ? 'mask' : 'content'
     const source = channelCanvas(layer, channel)
     const before = obtainBuffer(beforeRef)
-    before.getContext('2d')!.clearRect(0, 0, before.width, before.height)
-    before.getContext('2d')!.drawImage(source, 0, 0)
+    const beforeCtx = before.getContext('2d', { willReadFrequently: true })!
+    beforeCtx.clearRect(0, 0, before.width, before.height)
+    beforeCtx.drawImage(source, 0, 0)
     const pen = event.pointerType === 'pen'
     point[2] = pen ? event.pressure || 0.5 : 0.5
     const eraser = tool === 'eraser'

@@ -5,6 +5,18 @@ import { clipToSelection, selectionSvgPath } from './selection'
 export interface Bounds { minX: number; minY: number; maxX: number; maxY: number }
 
 export const vectorId = () => `v-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+
+// A fresh untouched layer (pixelVersion 0, no pixel data anywhere) renders as
+// fully transparent, so compose/snapshot can skip materializing its backing
+// store. Image layers always carry a source and are never considered empty.
+export function isPristineEmptyLayer(layer: LayerModel): boolean {
+  if (layer.pixelVersion !== 0) return false
+  if (layer.kind === 'image') return false
+  if (layer.kind === 'vector') return (layer.objects?.length ?? 0) === 0
+  if (layer.source || layer.sourceImage) return false
+  if (layer.dataCache?.data) return false
+  return true
+}
 export const cloneObjects = (objects: VectorObject[] = []) => {
   const cloned = JSON.parse(JSON.stringify(objects)) as VectorObject[]
   cloned.forEach(ensureObjectOrigin)
@@ -129,7 +141,8 @@ export function renderVectorObject(ctx: CanvasRenderingContext2D, object: Vector
 }
 
 export function renderVectorLayer(layer: LayerModel) {
-  const ctx = layer.canvas.getContext('2d')!
+  if (isPristineEmptyLayer(layer)) return
+  const ctx = layer.canvas.getContext('2d', { willReadFrequently: true })!
   ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height)
   for (const object of layer.objects ?? []) renderVectorObject(ctx, object)
   layer.pixelVersion += 1

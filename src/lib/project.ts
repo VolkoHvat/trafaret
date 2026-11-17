@@ -1,5 +1,5 @@
 import type { DocModel, LayerModel, ProjectSnapshot, ScanFilters } from '../types'
-import { cloneObjects } from './vector'
+import { cloneObjects, isPristineEmptyLayer } from './vector'
 
 export const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 
@@ -52,7 +52,7 @@ export function makeVectorLayer(doc: DocModel, name = 'Векторный кон
 
 export function createLayerMask(layer: LayerModel) {
   const mask = makeCanvas(layer.canvas.width, layer.canvas.height)
-  const ctx = mask.getContext('2d')!
+  const ctx = mask.getContext('2d', { willReadFrequently: true })!
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, mask.width, mask.height)
   layer.mask = mask
@@ -82,7 +82,7 @@ export function fileToDataURL(file: File): Promise<string> {
 export function redrawImageLayer(layer: LayerModel) {
   if (!layer.sourceImage) return
   const { canvas, sourceImage: image } = layer
-  const ctx = canvas.getContext('2d')!
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!
   const scale = layer.transform?.scale ?? 1
   const rotation = (layer.transform?.rotation ?? 0) * Math.PI / 180
   const fit = Math.min(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight) * 0.92
@@ -150,10 +150,16 @@ export function snapshotProject(doc: DocModel, layers: LayerModel[], activeLayer
     doc: { ...doc },
     activeLayerId,
     layers: layers.map((layer) => {
-      const data = layer.dataCache?.version === layer.pixelVersion
-        ? layer.dataCache.data
-        : layer.canvas.toDataURL('image/png')
-      layer.dataCache = { version: layer.pixelVersion, data }
+      // Pristine blank layers serialize as empty data without touching
+      // canvas.toDataURL, so autosave never materializes their backing store.
+      // Restore already treats data:"" as "no pixels" (pixelVersion stays 0).
+      const pristine = isPristineEmptyLayer(layer)
+      const data = pristine
+        ? ''
+        : layer.dataCache?.version === layer.pixelVersion
+          ? layer.dataCache.data
+          : layer.canvas.toDataURL('image/png')
+      layer.dataCache = pristine ? undefined : { version: layer.pixelVersion, data }
       let maskData: string | undefined
       if (layer.mask) {
         const version = layer.maskVersion ?? 0
@@ -184,7 +190,7 @@ export async function restoreProject(snapshot: ProjectSnapshot) {
     const canvas = makeCanvas(doc.width, doc.height)
     if (saved.data) {
       const bitmap = await loadImage(saved.data)
-      canvas.getContext('2d')!.drawImage(bitmap, 0, 0)
+      canvas.getContext('2d', { willReadFrequently: true })!.drawImage(bitmap, 0, 0)
     }
     const kind = saved.kind === 'image' ? 'image' : saved.kind === 'vector' && snapshot.version >= 2 ? 'vector' : 'paint'
     const layer: LayerModel = {
@@ -200,7 +206,7 @@ export async function restoreProject(snapshot: ProjectSnapshot) {
     if (saved.maskData) {
       const mask = makeCanvas(doc.width, doc.height)
       const bitmap = await loadImage(saved.maskData)
-      mask.getContext('2d')!.drawImage(bitmap, 0, 0)
+      mask.getContext('2d', { willReadFrequently: true })!.drawImage(bitmap, 0, 0)
       layer.mask = mask
       layer.maskVersion = 0
       layer.maskCache = { version: 0, data: saved.maskData }

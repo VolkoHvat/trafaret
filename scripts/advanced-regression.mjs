@@ -1,0 +1,370 @@
+#!/usr/bin/env node
+// Dev-only advanced production regression audit: honest E2E over the production
+// build served by a loopback static server, driven with Playwright. Same
+// constraints as production-regression.mjs: no DEV hooks, no external network,
+// no credentials, fresh isolated context per scenario. Does not modify src/.
+import http from 'node:http'
+import { readFile, writeFile } from 'node:fs/promises'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import path from 'node:path'
+import process from 'node:process'
+import { chromium } from 'playwright'
+
+const args = {}
+for (let i = 2; i < process.argv.length; i += 2) {
+  const key = process.argv[i]
+  if (!key.startsWith('--')) continue
+  args[key.slice(2)] = process.argv[i + 1]
+}
+const distDir = args.dist || '/tmp/trafaret-current-dist'
+const outJson = args.out || '/mnt/agents/private/trafaret-audit/advanced-regression.json'
+if (!existsSync(path.join(distDir, 'index.html'))) {
+  console.error(`production dist not found: ${distDir}`)
+  process.exit(2)
+}
+
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json', '.woff': 'font/woff', '.woff2': 'font/woff2' }
+function serve(root) {
+  const server = http.createServer(async (req, res) => {
+    try {
+      let urlPath = decodeURIComponent((req.url || '/').split('?')[0])
+      if (urlPath === '/') urlPath = '/index.html'
+      const file = path.normalize(path.join(root, urlPath))
+      if (!file.startsWith(path.normalize(root))) { res.writeHead(403); res.end(); return }
+      const data = await readFile(file)
+      res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream' })
+      res.end(data)
+    } catch {
+      res.writeHead(404); res.end('not found')
+    }
+  })
+  return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(server)))
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms))
+const shotsDir = path.join(path.dirname(outJson), 'screenshots', 'advanced-regression')
+mkdirSync(shotsDir, { recursive: true })
+
+const LAUNCH = {
+  headless: true,
+  args: ['--disable-dev-shm-usage', '--no-sandbox', '--hide-scrollbars', '--force-device-scale-factor=1'],
+}
+const VIEW = { width: 1400, height: 900 }
+
+function attachTrackers(page) {
+  const t = {
+    pageErrors: [], consoleErrors: [], responses: [], failed: [], external: [],
+    badResponses: [],
+  }
+  page.on('pageerror', e => t.pageErrors.push(String(e).slice(0, 400)))
+  page.on('console', m => { if (m.type() === 'error') t.consoleErrors.push(m.text().slice(0, 400)) })
+  page.on('response', res => {
+    const rec = { url: res.url(), status: res.status() }
+    t.responses.push(rec)
+    if (res.status() >= 400) t.badResponses.push(rec)
+  })
+  page.on('requestfailed', req => t.failed.push({ url: req.url(), error: String(req.failure()?.errorText || '').slice(0, 200) }))
+  page.on('request', req => {
+    try {
+      const u = new URL(req.url())
+      if ((u.protocol === 'http:' || u.protocol === 'https:') && u.hostname !== '127.0.0.1' && u.hostname !== 'localhost') t.external.push(req.url())
+    } catch { /* non-http scheme */ }
+  })
+  return t
+}
+function errorSummary(t) {
+  return {
+    pageErrors: t.pageErrors, consoleErrors: t.consoleErrors,
+    badResponses: t.badResponses, failedLocal: t.failed, externalRequests: t.external,
+    clean: t.pageErrors.length === 0 && t.consoleErrors.length === 0 && t.badResponses.length === 0 && t.failed.length === 0 && t.external.length === 0,
+  }
+}
+
+let server = null
+let browser = null
+async function freshContext({ viewport = VIEW } = {}) {
+  const context = await browser.newContext({ viewport })
+  const page = await context.newPage()
+  const trackers = attachTrackers(page)
+  const url = `http://127.0.0.1:${server.address().port}/`
+  await page.goto(url, { waitUntil: 'load', timeout: 30000 })
+  await page.waitForSelector('canvas.drawing-canvas', { timeout: 15000 })
+  await page.waitForSelector('.loading-cover', { state: 'detached', timeout: 15000 }).catch(() => {})
+  await sleep(800) // hydrate + fitView + idle diagnostics
+  return { context, page, trackers, url }
+}
+
+async function canvasBox(page) {
+  return page.evaluate(() => {
+    const el = document.querySelector('canvas.drawing-canvas')
+    if (!el) return null
+    const r = el.getBoundingClientRect()
+    return { left: r.left, top: r.top, width: r.width, height: r.height, docW: el.width, docH: el.height }
+  })
+}
+const docToClient = (box, x, y) => ({ x: box.left + x * box.width / box.docW, y: box.top + y * box.height / box.docH })
+
+// Exact full-canvas sample: raw RGBA every `step` px, compared byte-for-byte in Node.
+async function sampleGrid(page, step = 8) {
+  return page.evaluate(step => {
+    const el = document.querySelector('canvas.drawing-canvas')
+    const ctx = el.getContext('2d', { willReadFrequently: true })
+    const { width, height } = el
+    const img = ctx.getImageData(0, 0, width, height).data
+    const out = []
+    for (let y = 0; y < height; y += step) {
+      for (let x = 0; x < width; x += step) {
+        const i = (y * width + x) * 4
+        out.push(img[i], img[i + 1], img[i + 2], img[i + 3])
+      }
+    }
+    let h1 = 0, h2 = 0
+    for (let i = 0; i < out.length; i++) { h1 = (Math.imul(h1, 31) + out[i]) | 0; h2 = (Math.imul(h2, 17) + out[i] * 3) | 0 }
+    return { width, height, step, count: out.length / 4, hash: `${(h1 >>> 0).toString(16)}:${(h2 >>> 0).toString(16)}`, pixels: out }
+  }, step)
+}
+function diffPixels(a, b) {
+  if (!a || !b || a.pixels.length !== b.pixels.length) return -1
+  let n = 0
+  for (let i = 0; i < a.pixels.length; i += 4) {
+    if (a.pixels[i] !== b.pixels[i] || a.pixels[i + 1] !== b.pixels[i + 1] || a.pixels[i + 2] !== b.pixels[i + 2] || a.pixels[i + 3] !== b.pixels[i + 3]) n++
+  }
+  return n
+}
+const exactEqual = (a, b) => diffPixels(a, b) === 0
+
+async function readPixel(page, docX, docY) {
+  return page.evaluate(([x, y]) => {
+    const el = document.querySelector('canvas.drawing-canvas')
+    const ctx = el.getContext('2d', { willReadFrequently: true })
+    const px = Math.max(0, Math.min(el.width - 1, Math.floor(x)))
+    const py = Math.max(0, Math.min(el.height - 1, Math.floor(y)))
+    return Array.from(ctx.getImageData(px, py, 1, 1).data)
+  }, [docX, docY])
+}
+const isBackground = rgba => rgba[0] === 243 && rgba[1] === 241 && rgba[2] === 233
+
+async function rectSelect(page, box, a, b) {
+  await page.keyboard.press('a')
+  await sleep(150)
+  const A = docToClient(box, a[0], a[1]), B = docToClient(box, b[0], b[1])
+  await page.mouse.move(A.x, A.y)
+  await page.mouse.down()
+  await page.mouse.move((A.x + B.x) / 2, (A.y + B.y) / 2, { steps: 4 })
+  await page.mouse.move(B.x, B.y, { steps: 4 })
+  await page.mouse.up()
+  await sleep(250)
+}
+
+async function fillAt(page, box, docX, docY) {
+  await page.keyboard.press('g')
+  await sleep(200)
+  const c = docToClient(box, docX, docY)
+  await page.mouse.click(c.x, c.y)
+  await sleep(300)
+}
+
+async function downloadTo(page, trigger, target) {
+  const [download] = await Promise.all([
+    page.waitForEvent('download', { timeout: 15000 }),
+    trigger(),
+  ])
+  await download.saveAs(target)
+  return target
+}
+
+// ---------- Scenario 04: vector pen path inside selection; clips proven in saved project; Delete clears vector pixels; Ctrl+Z restores exactly ----------
+async function s04VectorPenClips() {
+  const { context, page, trackers } = await freshContext()
+  try {
+    const box = await canvasBox(page)
+    // rectangle selection; the pen path is committed inside it
+    await rectSelect(page, box, [500, 300], [1100, 700])
+    await page.keyboard.press('p') // pen tool auto-creates a vector layer
+    await sleep(250)
+    // dense zig-zag of pen nodes strictly inside the selection
+    const docPts = []
+    for (let i = 0; i < 14; i++) {
+      docPts.push([560 + i * 40, 500 + (i % 2 === 0 ? -110 : 110)])
+    }
+    for (const [x, y] of docPts) {
+      const c = docToClient(box, x, y)
+      await page.mouse.click(c.x, c.y)
+      await sleep(70)
+    }
+    await page.keyboard.press('Enter') // commit open path
+    await sleep(350)
+    await page.keyboard.press('b') // drop object selection so Delete hits clearActive(selection)
+    await sleep(250)
+    const sampleBefore = await sampleGrid(page)
+
+    // save the project and prove vector objects + selection clips in the file
+    const file = '/tmp/trafaret-audit-vector-clips.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), file)
+    const json = JSON.parse(await readFile(file, 'utf8'))
+    const layers = json.layers || []
+    const vectorLayer = layers.find(l => l.kind === 'vector')
+    const vectorOk = Boolean(vectorLayer && Array.isArray(vectorLayer.objects) && vectorLayer.objects.length > 0
+      && vectorLayer.objects.every(o => Array.isArray(o.points) && o.points.length >= 2))
+    const clipsOk = Boolean(vectorLayer && vectorLayer.objects.some(o => Array.isArray(o.clips) && o.clips.length > 0 && Array.isArray(o.clips[0].points)))
+
+    // Delete with the selection still active clears the vector pixels inside it
+    await page.keyboard.press('Delete')
+    await sleep(350)
+    const sampleCleared = await sampleGrid(page)
+    const clearedDiff = diffPixels(sampleBefore, sampleCleared)
+    await page.screenshot({ path: path.join(shotsDir, '04-vector-cleared.png') })
+
+    // Ctrl+Z must restore the exact sampled composite
+    await page.keyboard.press('Control+z')
+    await sleep(350)
+    const sampleUndone = await sampleGrid(page)
+    await page.screenshot({ path: path.join(shotsDir, '04-vector-undo.png') })
+    const undoExact = exactEqual(sampleUndone, sampleBefore)
+    const err = errorSummary(trackers)
+    return {
+      status: (vectorOk && clipsOk && clearedDiff > 0 && undoExact && err.clean) ? 'PASS' : 'FAIL',
+      evidence: {
+        structure: {
+          format: json.format, version: json.version,
+          layerKinds: layers.map(l => l.kind),
+          vectorObjects: vectorOk, selectionClips: clipsOk,
+          clipPointCount: vectorLayer?.objects?.[0]?.clips?.[0]?.points?.length ?? 0,
+        },
+        hashes: { beforeDelete: sampleBefore.hash, cleared: sampleCleared.hash, undone: sampleUndone.hash },
+        clearedDiffPixels: clearedDiff,
+        undoExactRestore: undoExact,
+        file,
+        ...err,
+      },
+    }
+  } finally { await context.close().catch(() => {}) }
+}
+
+// ---------- Scenario 05: layer mask hides lower layer; clipToBelow clips upper by masked lower (pixel proofs) ----------
+async function s05LayerMaskClipToBelow() {
+  const { context, page, trackers } = await freshContext()
+  try {
+    const box = await canvasBox(page)
+    // lower layer «Линия 1»: fill block [600,600]-[1100,900]
+    await rectSelect(page, box, [600, 600], [1100, 900])
+    await fillAt(page, box, 850, 750)
+    await page.keyboard.press('Escape')
+    await sleep(250)
+
+    // add raster layer «Линия 2» (becomes active, sits above «Линия 1»)
+    await page.click('button[aria-label="Добавить растровый слой"]')
+    await sleep(400)
+    const upperName = await page.evaluate(() => document.querySelector('.layer-row.active .layer-name')?.textContent?.trim() ?? null)
+
+    // upper layer: fill block [500,500]-[1200,1000]
+    await rectSelect(page, box, [500, 500], [1200, 1000])
+    await fillAt(page, box, 850, 750)
+    await page.keyboard.press('Escape')
+    await sleep(250)
+
+    // lower layer: add mask, switch to mask editing
+    await page.click('button[aria-label="Выбрать слой Линия 1"]')
+    await sleep(300)
+    await page.click('button:has-text("Добавить маску")')
+    await sleep(400)
+    await page.click('.mask-controls .segmented-control button:has-text("Маска")')
+    await sleep(300)
+    const maskEditingActive = await page.evaluate(() => document.querySelector('.canvas-context')?.textContent?.includes('РЕДАКТИРОВАНИЕ МАСКИ') ?? false)
+
+    // select the right part and Delete: mask goes black there, lower layer hidden on the right
+    await rectSelect(page, box, [900, 500], [1200, 1000])
+    await page.keyboard.press('Delete')
+    await sleep(400)
+
+    // back to content editing, select the upper layer
+    await page.click('.mask-controls .segmented-control button:has-text("Содержимое")')
+    await sleep(300)
+    await page.click('button[aria-label="Выбрать слой Линия 2"]')
+    await sleep(300)
+
+    // pixel proofs before enabling clipToBelow
+    const rightBefore = await readPixel(page, 1000, 800) // upper ink, lower masked away here
+    const leftBefore = await readPixel(page, 700, 700)   // upper ink over intact lower
+    const rightVisibleBefore = !isBackground(rightBefore)
+
+    // enable «Обрезать по нижнему слою» on the upper layer
+    await page.check('.layer-settings label.check-row:has-text("Обрезать по нижнему слою") input')
+    await sleep(500)
+
+    const rightAfter = await readPixel(page, 1000, 800) // now background: lower masked → upper clipped away
+    const leftAfter = await readPixel(page, 700, 700)   // still visible: lower intact here
+    await page.screenshot({ path: path.join(shotsDir, '05-clip-to-below.png') })
+
+    const clipOk = isBackground(rightAfter) && !isBackground(leftAfter)
+    const err = errorSummary(trackers)
+    return {
+      status: (upperName === 'Линия 2' && maskEditingActive && rightVisibleBefore && clipOk && err.clean) ? 'PASS' : 'FAIL',
+      evidence: {
+        upperLayerName: upperName,
+        maskEditingActive,
+        probes: {
+          right: { doc: [1000, 800], beforeClip: rightBefore, afterClip: rightAfter, visibleBeforeClip: rightVisibleBefore, backgroundAfterClip: isBackground(rightAfter) },
+          left: { doc: [700, 700], beforeClip: leftBefore, afterClip: leftAfter, visibleAfterClip: !isBackground(leftAfter) },
+        },
+        clipToBelowProof: clipOk,
+        ...err,
+      },
+    }
+  } finally { await context.close().catch(() => {}) }
+}
+
+// ---------- main ----------
+const started = Date.now()
+console.log(`[audit] production dist=${distDir}`)
+console.log(`[audit] out=${outJson}`)
+server = await serve(distDir)
+browser = await chromium.launch(LAUNCH)
+
+const scenarios = [
+  ['04-vector-pen-clips', 'Vector pen path inside selection; saved project proves objects+clips; Delete clears vector pixels; Ctrl+Z exact restore', s04VectorPenClips],
+  ['05-layer-mask-cliptobelow', 'Layer mask hides lower right side; clipToBelow on upper clips by masked lower (readPixel proofs)', s05LayerMaskClipToBelow],
+]
+
+const report = {
+  generatedAt: new Date().toISOString(),
+  durationMs: 0,
+  environment: {
+    dist: distDir,
+    node: process.version,
+    playwright: JSON.parse(readFileSync(new URL('../node_modules/playwright/package.json', import.meta.url), 'utf8')).version,
+    viewport: VIEW,
+    loopbackOnly: true,
+    devHookUsed: false,
+  },
+  scenarios: {},
+}
+
+let pass = 0, fail = 0
+for (const [id, description, fn] of scenarios) {
+  const t0 = Date.now()
+  try {
+    const result = await fn()
+    report.scenarios[id] = { description, durationMs: Date.now() - t0, ...result }
+    if (result.status === 'PASS') pass++
+    else fail++
+    console.log(`[audit] ${id}: ${result.status} (${Date.now() - t0}ms)`)
+  } catch (e) {
+    fail++
+    report.scenarios[id] = { description, durationMs: Date.now() - t0, status: 'FAIL', evidence: { crashed: String(e).slice(0, 500) } }
+    console.log(`[audit] ${id}: FAIL (exception) ${String(e).slice(0, 200)}`)
+  }
+}
+
+report.summary = {
+  pass, fail, notTested: 0,
+  exitCode: fail === 0 ? 0 : 1,
+}
+report.durationMs = Date.now() - started
+mkdirSync(path.dirname(outJson), { recursive: true })
+await writeFile(outJson, JSON.stringify(report, null, 2))
+console.log(`[audit] PASS=${pass} FAIL=${fail} report=${outJson}`)
+
+await browser.close().catch(() => {})
+await new Promise(r => server.close(() => r()))
+process.exit(report.summary.exitCode)

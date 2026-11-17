@@ -1,13 +1,14 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter } from 'react-router'
 import './index.css'
 import App from './App.tsx'
+import { installAndroidBridge } from './lib/sync/capacitor-bridge'
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <BrowserRouter>
+// Мост ставим до первого рендера, чтобы createAuthProvider сразу увидел нативный мост.
+void installAndroidBridge().finally(() => {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
       <App />
-    </BrowserRouter>
-  </StrictMode>,
-)
+    </StrictMode>,
+  )
+})

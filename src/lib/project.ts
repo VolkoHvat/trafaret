@@ -7,8 +7,33 @@ export function makeCanvas(width: number, height: number) {
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
-  canvas.getContext('2d', { willReadFrequently: true })
+  // No eager getContext: the backing store is allocated on the first real
+  // getContext/draw call, so transient canvases cost nothing until used.
   return canvas
+}
+
+function shrinkCanvas(buffer: unknown) {
+  if (buffer && typeof buffer === 'object'
+    && typeof (buffer as { width?: unknown }).width === 'number'
+    && typeof (buffer as { height?: unknown }).height === 'number') {
+    ;(buffer as { width: number }).width = 1
+    ;(buffer as { height: number }).height = 1
+  }
+}
+
+// Shrinks the backing stores of canvases belonging to layers that are about to
+// be discarded (document replaced), without mutating the LayerModel type:
+// canvas/mask/filterCache are kept as references but reduced to 1x1, and the
+// PNG data caches are dropped. Do not call for layers that stay in use.
+export function disposeLayerCanvases(layers: LayerModel | LayerModel[]) {
+  const list = Array.isArray(layers) ? layers : [layers]
+  for (const layer of list) {
+    shrinkCanvas(layer.canvas)
+    shrinkCanvas(layer.mask)
+    shrinkCanvas(layer.filterCache)
+    layer.dataCache = undefined
+    layer.maskCache = undefined
+  }
 }
 
 export function makePaintLayer(doc: DocModel, name = 'Линия'): LayerModel {
@@ -118,9 +143,11 @@ export function getLayerRenderCanvas(layer: LayerModel) {
   return cache
 }
 
-export function snapshotProject(doc: DocModel, layers: LayerModel[], activeLayerId: string): ProjectSnapshot {
+export function snapshotProject(doc: DocModel, layers: LayerModel[], activeLayerId: string, meta?: { projectId?: string; revision?: number }): ProjectSnapshot {
   return {
-    format: 'trafaret-project', version: 2, savedAt: new Date().toISOString(), doc: { ...doc },
+    format: 'trafaret-project', version: 2, savedAt: new Date().toISOString(),
+    projectId: meta?.projectId, revision: meta?.revision,
+    doc: { ...doc },
     activeLayerId,
     layers: layers.map((layer) => {
       const data = layer.dataCache?.version === layer.pixelVersion

@@ -6,7 +6,11 @@ import type {
 import { renderStroke, type StrokePoint } from '../lib/brushes'
 import { floodFill } from '../lib/fill'
 import { clipToSelection, drawSelectionOutline, selectionBounds } from '../lib/selection'
+import { analyzeArtwork, type ArtworkLayer, type ArtworkReport } from '../lib/artwork-analysis'
 import { getLayerRenderCanvas, makeCanvas } from '../lib/project'
+import {
+  decodeRasterImage, evictOverBudget, makeRasterHistoryEntry, type RasterHistoryEntry,
+} from '../lib/raster-history'
 import {
   cloneObjects, defaultVectorTransform, ensureObjectOrigin, hitVectorObject,
   objectBounds, objectOrigin, renderVectorLayer, renderVectorObject, vectorId,
@@ -21,6 +25,7 @@ export interface StudioHandle {
   cancelDraft: () => void
   fitView: () => void
   exportImage: (transparent: boolean, stencil: boolean, onlyActive?: boolean) => Promise<Blob>
+  analyzeArtwork: () => ArtworkReport
   dropHistoryFor: (layerId: string) => void
   historyPixels: () => number
 }
@@ -29,6 +34,7 @@ interface Props {
   doc: DocModel
   layers: LayerModel[]
   activeLayerId: string
+  projectSession: number
   tool: ToolId
   brush: BrushConfig
   color: string
@@ -72,15 +78,6 @@ interface CurrentStroke {
 }
 
 interface Rect { x: number; y: number; width: number; height: number }
-interface RasterHistory {
-  kind: 'raster'
-  layerId: string
-  channel: 'content' | 'mask'
-  rect: Rect
-  before: ImageData
-  after: ImageData
-  cost: number
-}
 interface ObjectHistory {
   kind: 'objects'
   layerId: string
@@ -88,7 +85,16 @@ interface ObjectHistory {
   after: VectorObject[]
   cost: number
 }
-type HistoryEntry = RasterHistory | ObjectHistory
+type HistoryEntry = RasterHistoryEntry | ObjectHistory
+interface RasterHistoryInput {
+  kind: 'raster'
+  layerId: string
+  channel: 'content' | 'mask'
+  rect: Rect
+  before: ImageData
+  after: ImageData
+}
+type HistoryInput = RasterHistoryInput | ObjectHistory
 
 type ObjectDragMode = 'move' | 'scale' | 'rotate' | 'node'
 interface ObjectDrag {
@@ -124,6 +130,7 @@ interface SelectionDraft {
 }
 
 const MAX_HISTORY_PIXELS = 32_000_000
+const ANALYSIS_SAMPLE_MAX = 512
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
 const copyPoints = (points: StrokePoint[]) => points.map(([x, y, p]) => [x, y, p] as StrokePoint)
 const selectionClips = (selection: SelectionModel | null) => selection
@@ -202,6 +209,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
   const maskedRef = useRef<HTMLCanvasElement | null>(null)
   const clippedRef = useRef<HTMLCanvasElement | null>(null)
   const belowRef = useRef<HTMLCanvasElement | null>(null)
+  const analysisRef = useRef<HTMLCanvasElement | null>(null)
   const currentRef = useRef<CurrentStroke | null>(null)
   const objectDragRef = useRef<ObjectDrag | null>(null)
   const rasterMoveRef = useRef<RasterMove | null>(null)
@@ -220,14 +228,37 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
   const ensureBuffers = useCallback(() => {
     const { width, height } = propsRef.current.doc
     canvasRef.current?.getContext('2d', { willReadFrequently: true })
-    const buffers = [strokeRef, beforeRef, previewRef, maskPreviewRef, maskedRef, clippedRef, belowRef]
-    for (const key of buffers) {
-      if (!key.current) key.current = makeCanvas(width, height)
-      if (key.current.width !== width || key.current.height !== height) {
-        key.current.width = width
-        key.current.height = height
+    for (const bufferRef of [strokeRef, beforeRef, previewRef, maskPreviewRef, maskedRef, clippedRef, belowRef]) {
+      const buffer = bufferRef.current
+      if (buffer && (buffer.width !== width || buffer.height !== height)) {
+        buffer.width = width
+        buffer.height = height
       }
     }
+  }, [])
+
+  const obtainBuffer = useCallback((bufferRef: { current: HTMLCanvasElement | null }) => {
+    const { width, height } = propsRef.current.doc
+    const existing = bufferRef.current
+    if (existing) {
+      if (existing.width !== width || existing.height !== height) {
+        existing.width = width
+        existing.height = height
+      }
+      return existing
+    }
+    const created = makeCanvas(width, height)
+    bufferRef.current = created
+    return created
+  }, [])
+
+  const releaseBuffer = useCallback((bufferRef: { current: HTMLCanvasElement | null }) => {
+    const buffer = bufferRef.current
+    if (buffer instanceof HTMLCanvasElement) {
+      buffer.width = 1
+      buffer.height = 1
+    }
+    bufferRef.current = null
   }, [])
 
   const updateHistoryState = useCallback(() => {
@@ -241,7 +272,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
 
   const channelCanvas = (layer: LayerModel, channel: 'content' | 'mask') => channel === 'mask' ? layer.mask! : layer.canvas
 
-  const composeTo = useCallback((target: HTMLCanvasElement, background: boolean, stencilMode: boolean, onlyActive = false) => {
+  const composeTo = useCallback((target: HTMLCanvasElement, background: boolean, stencilMode: boolean, onlyActive = false, scale = 1) => {
     ensureBuffers()
     const { doc, layers, activeLayerId, maskEditing } = propsRef.current
     const ctx = target.getContext('2d')!
@@ -252,21 +283,32 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     }
     const current = currentRef.current
     const rasterMove = rasterMoveRef.current
+    let belowNeeded = false
+    if (!onlyActive) {
+      let seenVisible = false
+      for (const layer of layers) {
+        if (!layer.visible) continue
+        if (layer.clipToBelow && seenVisible) { belowNeeded = true; break }
+        seenVisible = true
+      }
+    }
     let hasBelow = false
+    ctx.save()
+    ctx.scale(scale, scale)
     layers.forEach(layer => {
       if (!layer.visible || (onlyActive && layer.id !== activeLayerId)) return
       let source = getLayerRenderCanvas(layer)
       const contentPreview = current && current.layerId === layer.id && current.channel === 'content'
       const movePreview = rasterMove && rasterMove.layerId === layer.id && rasterMove.channel === 'content'
       if (contentPreview || movePreview) {
-        const preview = previewRef.current!
+        const preview = obtainBuffer(previewRef)
         const pctx = preview.getContext('2d')!
         pctx.clearRect(0, 0, doc.width, doc.height)
         pctx.drawImage(source, 0, 0)
         if (contentPreview && current) {
           pctx.save()
           pctx.globalCompositeOperation = current.eraser ? 'destination-out' : 'source-over'
-          pctx.drawImage(strokeRef.current!, 0, 0)
+          pctx.drawImage(obtainBuffer(strokeRef), 0, 0)
           pctx.restore()
         }
         if (movePreview && rasterMove) {
@@ -281,18 +323,18 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
 
       let activeMask = layer.mask
       if (current && current.layerId === layer.id && current.channel === 'mask' && layer.mask) {
-        const maskPreview = maskPreviewRef.current!
+        const maskPreview = obtainBuffer(maskPreviewRef)
         const mctx = maskPreview.getContext('2d')!
         mctx.clearRect(0, 0, doc.width, doc.height)
         mctx.drawImage(layer.mask, 0, 0)
         mctx.save()
         mctx.globalCompositeOperation = current.eraser ? 'destination-out' : 'source-over'
-        mctx.drawImage(strokeRef.current!, 0, 0)
+        mctx.drawImage(obtainBuffer(strokeRef), 0, 0)
         mctx.restore()
         activeMask = maskPreview
       }
       if (rasterMove && rasterMove.layerId === layer.id && rasterMove.channel === 'mask' && layer.mask) {
-        const maskPreview = maskPreviewRef.current!
+        const maskPreview = obtainBuffer(maskPreviewRef)
         const mctx = maskPreview.getContext('2d')!
         mctx.clearRect(0, 0, doc.width, doc.height)
         mctx.drawImage(layer.mask, 0, 0)
@@ -304,7 +346,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
         activeMask = maskPreview
       }
       if (activeMask && layer.maskEnabled !== false) {
-        const masked = maskedRef.current!
+        const masked = obtainBuffer(maskedRef)
         const mctx = masked.getContext('2d')!
         mctx.clearRect(0, 0, doc.width, doc.height)
         mctx.globalCompositeOperation = 'source-over'
@@ -315,13 +357,13 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
         source = masked
       }
       if (layer.clipToBelow && hasBelow && !onlyActive) {
-        const clipped = clippedRef.current!
+        const clipped = obtainBuffer(clippedRef)
         const cctx = clipped.getContext('2d')!
         cctx.clearRect(0, 0, doc.width, doc.height)
         cctx.globalCompositeOperation = 'source-over'
         cctx.drawImage(source, 0, 0)
         cctx.globalCompositeOperation = 'destination-in'
-        cctx.drawImage(belowRef.current!, 0, 0)
+        cctx.drawImage(obtainBuffer(belowRef), 0, 0)
         cctx.globalCompositeOperation = 'source-over'
         source = clipped
       }
@@ -331,15 +373,18 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       if (stencilMode) ctx.filter = 'grayscale(1) contrast(1.55)'
       ctx.drawImage(source, 0, 0)
       ctx.restore()
-      const below = belowRef.current!
-      const bctx = below.getContext('2d')!
-      bctx.clearRect(0, 0, doc.width, doc.height)
-      bctx.globalCompositeOperation = 'source-over'
-      bctx.drawImage(source, 0, 0)
+      if (belowNeeded) {
+        const below = obtainBuffer(belowRef)
+        const bctx = below.getContext('2d')!
+        bctx.clearRect(0, 0, doc.width, doc.height)
+        bctx.globalCompositeOperation = 'source-over'
+        bctx.drawImage(source, 0, 0)
+      }
       hasBelow = true
     })
+    ctx.restore()
     void maskEditing
-  }, [ensureBuffers])
+  }, [ensureBuffers, obtainBuffer])
 
   const drawOverlay = useCallback((ctx: CanvasRenderingContext2D) => {
     const {
@@ -461,15 +506,37 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       cancelAnimationFrame(frameRef.current)
       frameRef.current = null
     }
-  }, [])
+    releaseBuffer(strokeRef)
+    releaseBuffer(beforeRef)
+    releaseBuffer(previewRef)
+    releaseBuffer(maskPreviewRef)
+    releaseBuffer(maskedRef)
+    releaseBuffer(clippedRef)
+    releaseBuffer(belowRef)
+    releaseBuffer(analysisRef)
+  }, [releaseBuffer])
 
-  const pushHistory = useCallback((entry: HistoryEntry) => {
+  // Document identity changed (create/load): drop the old document's undo/redo
+  // history and transient buffers so Undo cannot cross documents and the old
+  // entries are not retained. Plain title/DPI edits do not bump the session.
+  const lastSessionRef = useRef(props.projectSession)
+  useEffect(() => {
+    if (lastSessionRef.current === props.projectSession) return
+    lastSessionRef.current = props.projectSession
+    historyRef.current = []
+    redoRef.current = []
+    historySizeRef.current = 0
+    updateHistoryState()
+    releaseBuffer(strokeRef)
+    releaseBuffer(beforeRef)
+    releaseBuffer(previewRef)
+    releaseBuffer(maskPreviewRef)
+  }, [props.projectSession, releaseBuffer, updateHistoryState])
+
+  const pushHistory = useCallback((input: HistoryInput) => {
+    const entry: HistoryEntry = input.kind === 'objects' ? input : makeRasterHistoryEntry(input)
     historyRef.current.push(entry)
-    historySizeRef.current += entry.cost
-    while (historySizeRef.current > MAX_HISTORY_PIXELS && historyRef.current.length > 1) {
-      const removed = historyRef.current.shift()!
-      historySizeRef.current -= removed.cost
-    }
+    historySizeRef.current = evictOverBudget(historyRef.current, MAX_HISTORY_PIXELS, historySizeRef.current + entry.cost)
     redoRef.current = []
     updateHistoryState()
   }, [updateHistoryState])
@@ -490,7 +557,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     } else {
       const canvas = entry.channel === 'mask' ? layer.mask : layer.canvas
       if (!canvas) return
-      canvas.getContext('2d')!.putImageData(entry[side], entry.rect.x, entry.rect.y)
+      canvas.getContext('2d')!.putImageData(decodeRasterImage(entry[side]), entry.rect.x, entry.rect.y)
       if (entry.channel === 'mask') layer.maskVersion = (layer.maskVersion ?? 0) + 1
       else {
         layer.pixelVersion += 1
@@ -545,7 +612,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       const after = ctx.getImageData(rect.x, rect.y, rect.width, rect.height)
       if (maskEditing) layer.maskVersion = (layer.maskVersion ?? 0) + 1
       else { layer.pixelVersion += 1; layer.filterKey = undefined }
-      pushHistory({ kind: 'raster', layerId: layer.id, channel: maskEditing ? 'mask' : 'content', rect, before, after, cost: rect.width * rect.height })
+      pushHistory({ kind: 'raster', layerId: layer.id, channel: maskEditing ? 'mask' : 'content', rect, before, after })
     }
     propsRef.current.onMutated()
     scheduleRender()
@@ -610,7 +677,10 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       rasterMoveRef.current = null
       selectionDraftRef.current = null
       penDraftRef.current = []
-      strokeRef.current?.getContext('2d')?.clearRect(0, 0, propsRef.current.doc.width, propsRef.current.doc.height)
+      releaseBuffer(strokeRef)
+      releaseBuffer(beforeRef)
+      releaseBuffer(previewRef)
+      releaseBuffer(maskPreviewRef)
       scheduleRender()
     },
     fitView: () => {
@@ -648,8 +718,35 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       historySizeRef.current = historyRef.current.reduce((sum, entry) => sum + entry.cost, 0)
       updateHistoryState()
     },
+    analyzeArtwork: () => {
+      const { doc, layers } = propsRef.current
+      const scale = Math.min(1, ANALYSIS_SAMPLE_MAX / doc.width, ANALYSIS_SAMPLE_MAX / doc.height)
+      const sampleWidth = Math.max(1, Math.ceil(doc.width * scale))
+      const sampleHeight = Math.max(1, Math.ceil(doc.height * scale))
+      const sample = analysisRef.current ?? makeCanvas(sampleWidth, sampleHeight)
+      analysisRef.current = sample
+      if (sample.width !== sampleWidth || sample.height !== sampleHeight) {
+        sample.width = sampleWidth
+        sample.height = sampleHeight
+      }
+      let image: ImageData | null = null
+      try {
+        // Чистый видимый composite: без фона, трафаретного фильтра и overlay.
+        composeTo(sample, false, false, false, scale)
+        image = sample.getContext('2d')!.getImageData(0, 0, sampleWidth, sampleHeight)
+      } finally {
+        // Сразу отпускаем backing store, чтобы не держать полноразмерный анализ.
+        sample.width = 1
+        sample.height = 1
+      }
+      const artworkLayers: ArtworkLayer[] = layers.map(layer => ({
+        id: layer.id, name: layer.name, kind: layer.kind,
+        visible: layer.visible, opacity: layer.opacity, objects: layer.objects,
+      }))
+      return analyzeArtwork(doc, artworkLayers, image)
+    },
     historyPixels: () => historySizeRef.current,
-  }), [clearActive, commitPen, composeTo, deleteSelectedObject, restoreHistory, scheduleRender, updateHistoryState])
+  }), [clearActive, commitPen, composeTo, deleteSelectedObject, releaseBuffer, restoreHistory, scheduleRender, updateHistoryState])
 
   const clientToDoc = useCallback((clientX: number, clientY: number): StrokePoint => {
     const canvas = canvasRef.current!
@@ -665,7 +762,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     const current = currentRef.current
     if (!current) return
     const { doc, selection } = propsRef.current
-    const canvas = strokeRef.current!
+    const canvas = obtainBuffer(strokeRef)
     const ctx = canvas.getContext('2d')!
     ctx.clearRect(0, 0, doc.width, doc.height)
     ctx.save()
@@ -683,7 +780,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       }
     }
     ctx.restore()
-  }, [])
+  }, [obtainBuffer])
 
   const finishStroke = useCallback(() => {
     const current = currentRef.current
@@ -692,7 +789,10 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     const layer = layers.find(item => item.id === current.layerId)
     if (!layer) {
       currentRef.current = null
-      strokeRef.current!.getContext('2d')!.clearRect(0, 0, doc.width, doc.height)
+      releaseBuffer(strokeRef)
+      releaseBuffer(beforeRef)
+      releaseBuffer(previewRef)
+      releaseBuffer(maskPreviewRef)
       scheduleRender()
       return
     }
@@ -732,18 +832,21 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
         width: clamp(Math.ceil(maxX + pad) - x, 1, doc.width - x),
         height: clamp(Math.ceil(maxY + pad) - y, 1, doc.height - y),
       }
-      const before = beforeRef.current!.getContext('2d')!.getImageData(rect.x, rect.y, rect.width, rect.height)
+      const before = obtainBuffer(beforeRef).getContext('2d')!.getImageData(rect.x, rect.y, rect.width, rect.height)
       const after = ctx.getImageData(rect.x, rect.y, rect.width, rect.height)
       pushHistory({
         kind: 'raster', layerId: layer.id, channel: current.channel, rect,
-        before, after, cost: rect.width * rect.height,
+        before, after,
       })
     }
     currentRef.current = null
-    strokeRef.current!.getContext('2d')!.clearRect(0, 0, doc.width, doc.height)
+    releaseBuffer(strokeRef)
+    releaseBuffer(beforeRef)
+    releaseBuffer(previewRef)
+    releaseBuffer(maskPreviewRef)
     propsRef.current.onMutated()
     scheduleRender()
-  }, [pushHistory, pushObjectHistory, redrawCurrent, scheduleRender])
+  }, [pushHistory, pushObjectHistory, obtainBuffer, redrawCurrent, releaseBuffer, scheduleRender])
 
   const startObjectDrag = (event: React.PointerEvent<HTMLCanvasElement>, point: StrokePoint) => {
     const { layers, activeLayerId, selectedObjectId, view } = propsRef.current
@@ -836,7 +939,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     const channel = maskEditing ? 'mask' : 'content'
     const canvas = channelCanvas(layer, channel)
     if (!canvas) return
-    const before = beforeRef.current!
+    const before = obtainBuffer(beforeRef)
     before.getContext('2d')!.clearRect(0, 0, doc.width, doc.height)
     before.getContext('2d')!.drawImage(canvas, 0, 0)
     let rect: Rect = { x: 0, y: 0, width: doc.width, height: doc.height }
@@ -869,8 +972,16 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     rasterMoveRef.current = null
     const { layers, doc } = propsRef.current
     const layer = layers.find(item => item.id === move.layerId)
-    if (!layer) return
+    if (!layer) {
+      releaseBuffer(beforeRef)
+      releaseBuffer(previewRef)
+      releaseBuffer(maskPreviewRef)
+      return
+    }
     if (Math.abs(move.dx) < 0.001 && Math.abs(move.dy) < 0.001) {
+      releaseBuffer(beforeRef)
+      releaseBuffer(previewRef)
+      releaseBuffer(maskPreviewRef)
       scheduleRender()
       return
     }
@@ -886,11 +997,14 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     const maxX = clamp(Math.ceil(Math.max(move.bounds.x + move.bounds.width, move.bounds.x + move.dx + move.bounds.width)), minX + 1, doc.width)
     const maxY = clamp(Math.ceil(Math.max(move.bounds.y + move.bounds.height, move.bounds.y + move.dy + move.bounds.height)), minY + 1, doc.height)
     const rect = { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
-    const before = beforeRef.current!.getContext('2d')!.getImageData(rect.x, rect.y, rect.width, rect.height)
+    const before = obtainBuffer(beforeRef).getContext('2d')!.getImageData(rect.x, rect.y, rect.width, rect.height)
     const after = ctx.getImageData(rect.x, rect.y, rect.width, rect.height)
     if (move.channel === 'mask') layer.maskVersion = (layer.maskVersion ?? 0) + 1
     else { layer.pixelVersion += 1; layer.filterKey = undefined }
-    pushHistory({ kind: 'raster', layerId: layer.id, channel: move.channel, rect, before, after, cost: rect.width * rect.height })
+    pushHistory({ kind: 'raster', layerId: layer.id, channel: move.channel, rect, before, after })
+    releaseBuffer(beforeRef)
+    releaseBuffer(previewRef)
+    releaseBuffer(maskPreviewRef)
     propsRef.current.onSelectionChange({
       ...move.selection,
       points: move.selection.points.map(([x, y]) => [x + move.dx, y + move.dy]),
@@ -919,7 +1033,10 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       currentRef.current = null
       rasterMoveRef.current = null
       selectionDraftRef.current = null
-      strokeRef.current?.getContext('2d')?.clearRect(0, 0, doc.width, doc.height)
+      releaseBuffer(strokeRef)
+      releaseBuffer(beforeRef)
+      releaseBuffer(previewRef)
+      releaseBuffer(maskPreviewRef)
       const [a, b] = [...pointersRef.current.values()]
       const viewport = viewportRef.current!.getBoundingClientRect()
       const midX = (a.x + b.x) / 2 - viewport.left
@@ -983,7 +1100,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       const channel = maskEditing ? 'mask' : 'content'
       const canvas = channelCanvas(layer, channel)
       if (!canvas) return
-      const before = beforeRef.current!
+      const before = obtainBuffer(beforeRef)
       before.getContext('2d')!.clearRect(0, 0, doc.width, doc.height)
       before.getContext('2d')!.drawImage(canvas, 0, 0)
       const rect = floodFill(canvas, point[0], point[1], maskEditing ? '#ffffff' : color, selection)
@@ -993,9 +1110,12 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
         const afterData = ctx.getImageData(rect.x, rect.y, rect.width, rect.height)
         if (maskEditing) layer.maskVersion = (layer.maskVersion ?? 0) + 1
         else { layer.pixelVersion += 1; layer.filterKey = undefined }
-        pushHistory({ kind: 'raster', layerId: layer.id, channel, rect, before: beforeData, after: afterData, cost: rect.width * rect.height })
+        pushHistory({ kind: 'raster', layerId: layer.id, channel, rect, before: beforeData, after: afterData })
+        releaseBuffer(beforeRef)
         propsRef.current.onMutated()
         scheduleRender()
+      } else {
+        releaseBuffer(beforeRef)
       }
       return
     }
@@ -1014,7 +1134,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     }
     const channel = maskEditing ? 'mask' : 'content'
     const source = channelCanvas(layer, channel)
-    const before = beforeRef.current!
+    const before = obtainBuffer(beforeRef)
     before.getContext('2d')!.clearRect(0, 0, before.width, before.height)
     before.getContext('2d')!.drawImage(source, 0, 0)
     const pen = event.pointerType === 'pen'

@@ -117,6 +117,10 @@ export interface ProjectSnapshot {
   format: 'trafaret-project'
   version: number
   savedAt: string
+  /** Стабильный ID проекта для синхронизации; у файлов v1/v2 может отсутствовать. */
+  projectId?: string
+  /** Локальная ревизия содержимого, растёт с каждым реальным изменением. */
+  revision?: number
   doc: DocModel
   layers: LayerSnapshot[]
   activeLayerId: string

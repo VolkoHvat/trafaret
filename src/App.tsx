@@ -1,22 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  BoxSelect, Brush, Columns2, Download, Eraser, FileCode2, FilePlus2,
+  BoxSelect, Brush, Cloud, CloudOff, Columns2, Download, Eraser, FileCode2, FilePlus2,
   FlipHorizontal2, FolderOpen, Hand, HelpCircle, LassoSelect, Layers3,
   Maximize, Minus, MousePointer2, PaintBucket, PenTool, Pipette, Printer,
-  Redo2, Save, ScanLine, Shapes, SlidersHorizontal, Trash2, Undo2,
+  Redo2, Save, ScanLine, ScanSearch, Shapes, SlidersHorizontal, Stethoscope, Trash2, Undo2,
   ZoomIn, ZoomOut,
 } from 'lucide-react'
 import { get, set } from 'idb-keyval'
 import { StudioCanvas, type StudioHandle } from './components/StudioCanvas'
+import { AnalysisDialog } from './components/AnalysisDialog'
+import { DiagnosticsDialog } from './components/DiagnosticsDialog'
 import { BrushPanel } from './components/BrushPanel'
 import { LayersPanel } from './components/LayersPanel'
 import { ScanPanel } from './components/ScanPanel'
 import { DocumentPanel } from './components/DocumentPanel'
 import { StudioDialog } from './components/UI'
+import { CloudDialog } from './components/CloudDialog'
+import { useCloudSync } from './hooks/useCloudSync'
+import type { ArtworkReport } from './lib/artwork-analysis'
+import { runEnvironmentDiagnostics, type DeviceDiagnosticsReport } from './lib/diagnostics'
 import { BRUSH_ORDER, DEFAULT_BRUSHES } from './lib/brushes'
 import { blobToDataUrl, makeVectorSvg, withPngDpi } from './lib/output'
 import {
-  createLayerMask, downloadBlob, fileToDataURL, loadImage, makeCanvas,
+  createLayerMask, disposeLayerCanvases, downloadBlob, fileToDataURL, loadImage, makeCanvas,
   makePaintLayer, makeVectorLayer, redrawImageLayer, restoreProject,
   safeFilename, snapshotProject, uid,
 } from './lib/project'
@@ -45,12 +51,14 @@ function readWorkspaceSettings(): WorkspaceSettings {
 }
 
 const initialView: ViewState = { zoom: 0.25, panX: 80, panY: 80 }
-type ModalId = 'new' | 'export' | 'print' | 'help' | null
+type ModalId = 'new' | 'export' | 'print' | 'help' | 'cloud' | 'analysis' | 'diagnostics' | null
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!)
 
 export default function App() {
   const workspaceSettings = useRef(readWorkspaceSettings()).current
   const [doc, setDoc] = useState<DocModel>(initialDoc)
+  const [projectId, setProjectId] = useState(() => uid())
+  const [revision, setRevision] = useState(0)
   const [layers, setLayers] = useState<LayerModel[]>(() => [makePaintLayer(initialDoc, 'Линия 1')])
   const [activeLayerId, setActiveLayerId] = useState(() => layers[0].id)
   const [tool, setTool] = useState<ToolId>('brush')
@@ -82,6 +90,8 @@ export default function App() {
   const [canRedo, setCanRedo] = useState(false)
   const [modal, setModal] = useState<ModalId>(null)
   const [notice, setNotice] = useState('')
+  const [analysisReport, setAnalysisReport] = useState<ArtworkReport | null>(null)
+  const [diagnosticsReport, setDiagnosticsReport] = useState<DeviceDiagnosticsReport | null>(null)
   const [saveStatus, setSaveStatus] = useState('Только на этом устройстве')
   const [hydrated, setHydrated] = useState(false)
   const [newTitle, setNewTitle] = useState('Новый эскиз')
@@ -113,6 +123,7 @@ export default function App() {
   }, [notice])
 
   const mutate = useCallback(() => {
+    setRevision(value => value + 1)
     setSaveVersion(value => value + 1)
     setRenderToken(value => value + 1)
   }, [])
@@ -122,6 +133,11 @@ export default function App() {
     mutate()
   }, [mutate])
 
+  // Mirrors the current layers for imperative paths (dispose on document
+  // replace) without running side effects inside a setLayers updater.
+  const layersRef = useRef<LayerModel[]>(layers)
+  useEffect(() => { layersRef.current = layers }, [layers])
+
   const resetEditorContext = () => {
     setSelection(null)
     setSelectedObjectId(null)
@@ -130,15 +146,43 @@ export default function App() {
 
   const loadProject = useCallback(async (snapshot: ProjectSnapshot) => {
     const restored = await restoreProject(snapshot)
+    disposeLayerCanvases(layersRef.current)
     setDoc(restored.doc)
     setLayers(restored.layers)
     setActiveLayerId(restored.activeLayerId)
+    // Стабильный ID и ревизия восстанавливаются из файла; у проектов v1/v2 без ID
+    // назначается новый — данные при этом не теряются.
+    setProjectId(snapshot.projectId || uid())
+    setRevision(typeof snapshot.revision === 'number' && Number.isFinite(snapshot.revision) ? snapshot.revision : 0)
     setProjectSession(value => value + 1)
     setView(initialView)
     resetEditorContext()
-    mutate()
+    // Загрузка/применение облачной версии — не локальная правка: ревизия не растёт.
+    setSaveVersion(value => value + 1)
+    setRenderToken(value => value + 1)
     setTimeout(() => studioRef.current?.fitView(), 80)
-  }, [mutate])
+  }, [])
+
+  const takeSnapshot = useCallback(() => {
+    try { return JSON.stringify(snapshotProject(doc, layers, activeLayerId, { projectId, revision })) }
+    catch { return null }
+  }, [doc, layers, activeLayerId, projectId, revision])
+
+  const cloud = useCloudSync({
+    projectId, revision, takeSnapshot, hydrated,
+    applyRemote: async (json: string) => {
+      try {
+        await loadProject(JSON.parse(json) as ProjectSnapshot)
+        showNotice('Применена облачная версия проекта')
+      } catch {
+        showNotice('Не удалось применить облачную версию')
+      }
+    },
+  })
+  const notifyCloudRef = useRef(cloud.notifyLocalChange)
+  useEffect(() => {
+    notifyCloudRef.current = cloud.notifyLocalChange
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -159,20 +203,40 @@ export default function App() {
     setSaveStatus('Локальное сохранение…')
     const timer = setTimeout(() => {
       try {
-        const snapshot = snapshotProject(doc, layers, activeLayerId)
+        const snapshot = snapshotProject(doc, layers, activeLayerId, { projectId, revision })
         set(AUTOSAVE_KEY, snapshot)
-          .then(() => setSaveStatus(`Сохранено локально · ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`))
+          .then(() => {
+            setSaveStatus(`Сохранено локально · ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`)
+            notifyCloudRef.current()
+          })
           .catch(() => setSaveStatus('Не удалось сохранить — экспортируйте проект'))
       } catch {
         setSaveStatus('Не удалось сохранить — экспортируйте проект')
       }
     }, 1100)
     return () => clearTimeout(timer)
-  }, [doc, layers, activeLayerId, saveVersion, hydrated])
+  }, [doc, layers, activeLayerId, saveVersion, hydrated, projectId, revision])
 
   useEffect(() => {
     if (maskEditing && !activeLayer?.mask) setMaskEditing(false)
   }, [activeLayer, maskEditing])
+
+  // Локальная диагностика устройства: один запуск после первого рендера,
+  // в idle-периоде, чтобы не конкурировать с отрисовкой холста.
+  useEffect(() => {
+    let cancelled = false
+    const run = () => {
+      if (cancelled) return
+      try { setDiagnosticsReport(runEnvironmentDiagnostics()) }
+      catch { setDiagnosticsReport(null) }
+    }
+    if (typeof window.requestIdleCallback === 'function') {
+      const handle = window.requestIdleCallback(run, { timeout: 2000 })
+      return () => { cancelled = true; window.cancelIdleCallback(handle) }
+    }
+    const timer = window.setTimeout(run, 300)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [])
 
   const createProject = () => {
     const nextDoc: DocModel = {
@@ -182,9 +246,12 @@ export default function App() {
       dpi: Math.max(72, Math.min(1200, Math.round(newDpi))),
     }
     const layer = makePaintLayer(nextDoc, 'Линия 1')
+    disposeLayerCanvases(layersRef.current)
     setDoc(nextDoc)
     setLayers([layer])
     setActiveLayerId(layer.id)
+    setProjectId(uid())
+    setRevision(0)
     setProjectSession(value => value + 1)
     setView(initialView)
     resetEditorContext()
@@ -194,10 +261,10 @@ export default function App() {
   }
 
   const saveProject = useCallback(() => {
-    const snapshot = snapshotProject(doc, layers, activeLayerId)
+    const snapshot = snapshotProject(doc, layers, activeLayerId, { projectId, revision })
     downloadBlob(new Blob([JSON.stringify(snapshot)], { type: 'application/json' }), `${safeFilename(doc.title)}.tattoo.json`)
     showNotice('Проект v2 сохранён: слои, векторы, маски и DPI')
-  }, [doc, layers, activeLayerId, showNotice])
+  }, [doc, layers, activeLayerId, projectId, revision, showNotice])
 
   const importScan = async (file: File) => {
     if (!file.type.startsWith('image/')) return showNotice('Нужен PNG, JPEG или WebP')
@@ -324,6 +391,17 @@ export default function App() {
     setModal('print')
   }
 
+  const runAnalysis = () => {
+    if (!studioRef.current) return
+    try {
+      const report = studioRef.current.analyzeArtwork()
+      setAnalysisReport(report)
+      setModal('analysis')
+    } catch {
+      showNotice('Не удалось выполнить проверку эскиза')
+    }
+  }
+
   const updatePrintWidth = (width: number) => {
     const safe = Math.max(10, Math.min(2000, width || 10))
     setPrintWidthMm(safe)
@@ -423,6 +501,7 @@ export default function App() {
         g: 'fill', a: 'area', w: 'lasso', h: 'pan', i: 'picker',
       }
       if (tools[key]) chooseTool(tools[key])
+      else if (key === 'c') setModal('cloud')
       else if (key === 'm') setSymmetry(value => value === 'off' ? 'vertical' : 'off')
       else if (key === 't') setStencil(value => !value)
       else if (key === '[' || key === ']') {
@@ -442,6 +521,7 @@ export default function App() {
     const debug = {
       getState: () => ({
         doc: { ...doc },
+        projectId, revision,
         layers: layers.map(layer => ({
           id: layer.id, name: layer.name, kind: layer.kind, visible: layer.visible, locked: layer.locked,
           opacity: layer.opacity, blend: layer.blend, objects: cloneObjects(layer.objects),
@@ -457,11 +537,13 @@ export default function App() {
         const canvas = channel === 'mask' ? layer?.mask : layer?.canvas
         return canvas?.toDataURL('image/png') ?? null
       },
-      snapshot: () => snapshotProject(doc, layers, activeLayerId),
+      snapshot: () => snapshotProject(doc, layers, activeLayerId, { projectId, revision }),
+      analyzeArtwork: () => studioRef.current?.analyzeArtwork() ?? null,
+      runDiagnostics: () => runEnvironmentDiagnostics(),
     }
     Object.assign(window, { __tattooStudio: debug })
     return () => { delete (window as Window & { __tattooStudio?: unknown }).__tattooStudio }
-  }, [doc, layers, activeLayerId, tool, brushId, activeCustomIndex, customPresets, symmetry, radialCount, guide, shapeKind, areaShape, selection, maskEditing, selectedObjectId, stencil, view.zoom, saveVersion])
+  }, [doc, layers, activeLayerId, projectId, revision, tool, brushId, activeCustomIndex, customPresets, symmetry, radialCount, guide, shapeKind, areaShape, selection, maskEditing, selectedObjectId, stencil, view.zoom, saveVersion])
 
   const toolButtons: { id: ToolId; label: string; icon: React.ReactNode; key: string }[] = [
     { id: 'object', label: 'Объект и трансформация', icon: <MousePointer2 size={20} />, key: 'V' },
@@ -484,16 +566,21 @@ export default function App() {
           <span className="brand-mark" aria-hidden="true"><i /></span>
           <div><strong>ТРАФАРЕТ</strong><small>PRO LINEWORK STUDIO</small></div>
         </div>
-        <input className="document-title" value={doc.title} onChange={event => setDoc({ ...doc, title: event.target.value })} aria-label="Название проекта" />
+        <input className="document-title" value={doc.title} onChange={event => { setDoc({ ...doc, title: event.target.value }); setRevision(value => value + 1) }} aria-label="Название проекта" />
         <nav className="file-actions" aria-label="Проект">
           <button className="text-button" onClick={() => setModal('new')}><FilePlus2 size={16} /><span>Новый</span></button>
           <button className="text-button" onClick={() => openProjectRef.current?.click()}><FolderOpen size={16} /><span>Открыть</span></button>
           <button className="text-button" onClick={saveProject}><Save size={16} /><span>Сохранить</span></button>
+          <button className="text-button" onClick={() => setModal('diagnostics')} title="Локальная диагностика Canvas, пера и фильтров"><Stethoscope size={16} /><span>Диагностика устройства</span></button>
         </nav>
         <div className="top-actions">
           <button className="icon-button" disabled={!canUndo} onClick={() => studioRef.current?.undo()} title="Отменить (Ctrl+Z)" aria-label="Отменить"><Undo2 size={18} /></button>
           <button className="icon-button" disabled={!canRedo} onClick={() => studioRef.current?.redo()} title="Повторить (Ctrl+Shift+Z)" aria-label="Повторить"><Redo2 size={18} /></button>
           <button className="icon-button print-top" onClick={openPrint} title="Печать по физическому размеру" aria-label="Печать"><Printer size={17} /></button>
+          <button className="icon-button" onClick={runAnalysis} title="Проверка эскиза" aria-label="Проверка эскиза"><ScanSearch size={18} /></button>
+          <button className={`icon-button cloud-button cloud-${cloud.status.state}`} onClick={() => setModal('cloud')} title="Облачная синхронизация (C)" aria-label="Облачная синхронизация">
+            {cloud.status.state === 'offline' || (cloud.status.state === 'error' && !cloud.online) ? <CloudOff size={18} /> : <Cloud size={18} />}
+          </button>
           <button className="accent-button" onClick={() => setModal('export')}><Download size={16} /><span>Экспорт</span></button>
           <button className="icon-button help-button" onClick={() => setModal('help')} aria-label="Справка"><HelpCircle size={18} /></button>
         </div>
@@ -541,7 +628,7 @@ export default function App() {
             {selection && <><i /><span>{selection.inverse ? 'ИНВЕРСНОЕ ВЫДЕЛЕНИЕ' : 'ВЫДЕЛЕНИЕ АКТИВНО'}</span></>}
           </div>
           <StudioCanvas
-            key={projectSession} ref={studioRef} doc={doc} layers={layers} activeLayerId={activeLayerId}
+            key={projectSession} ref={studioRef} projectSession={projectSession} doc={doc} layers={layers} activeLayerId={activeLayerId}
             tool={tool} brush={currentBrush} color={color} symmetry={symmetry} radialCount={radialCount}
             guide={guide} shapeKind={shapeKind} areaShape={areaShape} selection={selection}
             maskEditing={maskEditing} selectedObjectId={selectedObjectId} stencil={stencil}
@@ -643,15 +730,21 @@ export default function App() {
 
       <StudioDialog open={modal === 'help'} onOpenChange={open => !open && setModal(null)} title="Профессиональный рабочий цикл" description="Растровая живопись и редактируемый векторный линворк в одном локальном документе.">
         <div className="help-content">
-          <section><h3>Линворк</h3><ol><li>Импортируйте скан в правой панели.</li><li>Добавьте растровый слой для свободной кисти или векторный для редактируемых контуров.</li><li>На векторном слое рисуйте кистью, линией, фигурами и пером. Инструмент «Объект» перемещает, масштабирует и вращает объекты; узлы пера редактируются отдельно.</li><li>Проверьте трафарет и экспортируйте PNG, SVG или печать в миллиметрах.</li></ol></section>
+          <section><h3>Линворк</h3><ol><li>Импортируйте скан в правой панели.</li><li>Добавьте растровый слой для свободной кисти или векторный для редактируемых контуров.</li><li>На векторном слое рисуйте кистью, линией, фигурами и пером. Инструмент «Объект» перемещает, масштабирует и вращает объекты; узлы пера редактируются отдельно.</li><li>Проверьте трафарет и экспортируйте PNG, SVG или печать в миллиметрах.</li><li>«Проверка эскиза» запускает локальный анализ узлов, деталей и композиции — это рекомендации, а не ошибки.</li></ol></section>
           <section><h3>Выделения и маски</h3><p>Область, эллипс и лассо ограничивают кисть, заливку и очистку. Инструмент «Объект» перемещает выделенные растровые пиксели. Маска не удаляет исходник: кисть показывает, ластик скрывает.</p></section>
           <section><h3>Клавиши</h3><div className="shortcut-grid"><span><kbd>V</kbd> Объект</span><span><kbd>B</kbd> Кисть</span><span><kbd>E</kbd> Ластик</span><span><kbd>P</kbd> Перо</span><span><kbd>S</kbd> Фигура</span><span><kbd>G</kbd> Заливка</span><span><kbd>A</kbd> Область</span><span><kbd>W</kbd> Лассо</span><span><kbd>M</kbd> Симметрия</span><span><kbd>T</kbd> Трафарет</span><span><kbd>[ ]</kbd> Размер</span><span><kbd>0</kbd> Вписать</span></div></section>
-          <section><h3>Планшет и Windows</h3><p>Один контакт рисует, два пальца масштабируют холст. «Только перо» блокирует следы ладони. На Windows 10/11 приложение работает в Edge или Chrome и устанавливается как PWA.</p></section>
+          <section><h3>Планшет и Windows</h3><p>Один контакт рисует, два пальца масштабируют холст. «Только перо» блокирует следы ладони. На Windows 10/11 приложение работает в Edge или Chrome и устанавливается как PWA. «Диагностика устройства» в верхней панели локально проверяет Canvas 2D, маски, нажим пера и фильтры трафарета — без сети и без отправки данных.</p></section>
           <section><h3>Хранение</h3><p>Автосохранение локально для этого браузера. Для резервной копии и переноса используйте проект v2 .tattoo.json. Старые проекты v1 открываются автоматически.</p></section>
         </div>
       </StudioDialog>
 
       {notice && <div className="toast" role="status">{notice}</div>}
+
+      <AnalysisDialog open={modal === 'analysis'} onOpenChange={open => !open && setModal(null)} report={analysisReport} />
+
+      <DiagnosticsDialog open={modal === 'diagnostics'} onOpenChange={open => !open && setModal(null)} report={diagnosticsReport} />
+
+      <CloudDialog open={modal === 'cloud'} onOpenChange={open => !open && setModal(null)} cloud={cloud} projectId={projectId} />
       {!hydrated && <div className="loading-cover"><span className="brand-mark"><i /></span><p>Открываем рабочее пространство…</p></div>}
     </div>
   )

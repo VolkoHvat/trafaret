@@ -19,7 +19,7 @@
     "desktop:start": "npm run build && npm run desktop:build && electron .",
     "desktop:dist": "npm run build && npm run desktop:build && electron-builder --win nsis --publish never --config.directories.output=/tmp/trafaret-windows-dist",
     "preview": "vite preview",
-    "android:sync": "npm run build && PATH=/tmp/node22/bin:$PATH npx cap sync android",
+    "android:sync": "npm run build && node node_modules/@capacitor/cli/bin/capacitor sync android",
     "android:apk": "npm run android:sync && cd android && ./gradlew assembleRelease"
   },
   "dependencies": {

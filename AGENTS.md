@@ -82,9 +82,10 @@ Vitest, ESLint, Tailwind, perfect-freehand.
 stroke-session, compositor — выделять только отдельными проверенными
 изменениями (шаг → тест → ревью → коммит на каждый).
 
-## Текущий следующий шаг (P0)
+## Текущий следующий шаг (P1)
 
-P0: arc/history/conflict/package metadata — с regression tests.
+P0 (arc/history/conflict/package metadata) завершён с regression tests.
+Следующий шаг: history/geometry/stroke-session/compositor — по плану в
+`docs/ENGINE_COMPARISON.md`.
 
-Зафиксировано как план; **этим контуром не исправлять** — только спланировать
-и выполнять отдельными шагами по правилам выше.
+Каждый модуль выполнять отдельным проверенным изменением по правилам выше.

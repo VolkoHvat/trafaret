@@ -52,6 +52,28 @@ export function makeVectorSvg(doc: DocModel, layers: LayerModel[]) {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${widthMm}mm" height="${heightMm}mm" viewBox="0 0 ${doc.width} ${doc.height}">\n<title>${escapeXml(doc.title)}</title>\n${defs ? `<defs>\n${defs}\n</defs>\n` : ''}${groups.join('\n')}\n</svg>`
 }
 
+export async function withGrayscale(blob: Blob): Promise<Blob> {
+  const bitmap = await createImageBitmap(blob)
+  const canvas = document.createElement('canvas')
+  canvas.width = bitmap.width
+  canvas.height = bitmap.height
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!
+  ctx.drawImage(bitmap, 0, 0)
+  bitmap.close()
+  const image = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  for (let i = 0; i < image.data.length; i += 4) {
+    const gray = image.data[i] * 0.2126 + image.data[i + 1] * 0.7152 + image.data[i + 2] * 0.0722
+    image.data[i] = gray
+    image.data[i + 1] = gray
+    image.data[i + 2] = gray
+  }
+  ctx.putImageData(image, 0, 0)
+  return new Promise((resolve, reject) => canvas.toBlob(
+    value => value ? resolve(value) : reject(new Error('Не удалось подготовить grayscale PNG')),
+    'image/png',
+  ))
+}
+
 export function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()

@@ -624,6 +624,70 @@ async function s16NondestructiveFilters() {
   } finally { await context.close().catch(() => {}) }
 }
 
+// ---------- Scenario 17: print color modes and physical page size ----------
+async function s17PrintColorModes() {
+  const { context, page, trackers } = await freshContext()
+  try {
+    await page.click('button[aria-label="Цвет #7d1f2d"]')
+    const brushSlider = page.locator('label.control-slider', { hasText: 'Размер' }).locator('input')
+    await brushSlider.evaluate(input => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setter?.call(input, '16')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const box = await canvasBox(page)
+    const start = docToClient(box, 500, 450)
+    const end = docToClient(box, 800, 450)
+    await page.mouse.move(start.x, start.y)
+    await page.mouse.down()
+    await page.mouse.move(end.x, end.y, { steps: 12 })
+    await page.mouse.up()
+    await sleep(400)
+
+    const printFrame = async mode => {
+      await page.click('button[aria-label="Печать"]')
+      await page.selectOption('.dialog-content label.select-field:has-text("Режим печати") select', mode)
+      await page.fill('.dialog-content label.text-field:has-text("Ширина, мм") input', '100')
+      await page.click('button.accent-button:has-text("Открыть диалог печати")')
+      await page.waitForSelector('iframe.print-frame', { timeout: 15000 })
+      await page.waitForFunction(() => {
+        const image = document.querySelector('iframe.print-frame')?.contentDocument?.querySelector('img')
+        return image?.complete && image.naturalWidth > 0
+      }, null, { timeout: 15000 })
+      const result = await page.evaluate(() => {
+        const frame = document.querySelector('iframe.print-frame')
+        const image = frame.contentDocument.querySelector('img')
+        const canvas = document.createElement('canvas')
+        canvas.width = image.naturalWidth
+        canvas.height = image.naturalHeight
+        const ctx = canvas.getContext('2d', { willReadFrequently: true })
+        ctx.drawImage(image, 0, 0)
+        return {
+          pixel: Array.from(ctx.getImageData(650, 450, 1, 1).data),
+          pageCss: frame.getAttribute('srcdoc').match(/@page\{[^}]+\}/)?.[0] ?? null,
+        }
+      })
+      await page.evaluate(() => { document.querySelector('iframe.print-frame')?.remove() })
+      return result
+    }
+
+    const color = await printFrame('color')
+    const grayscale = await printFrame('grayscale')
+    const stencil = await printFrame('stencil')
+    const err = errorSummary(trackers)
+    const colorIsColored = color.pixel[0] !== color.pixel[1] || color.pixel[0] !== color.pixel[2]
+    const grayIsNeutral = grayscale.pixel[0] === grayscale.pixel[1] && grayscale.pixel[1] === grayscale.pixel[2]
+    const stencilIsBinary = stencil.pixel[0] === stencil.pixel[1] && stencil.pixel[1] === stencil.pixel[2]
+      && (stencil.pixel[0] === 0 || stencil.pixel[0] === 255)
+    const pageSizes = [color, grayscale, stencil].every(result => result.pageCss?.includes('size:100.00mm 100.00mm'))
+    return {
+      status: colorIsColored && grayIsNeutral && stencilIsBinary && pageSizes && err.clean ? 'PASS' : 'FAIL',
+      evidence: { color, grayscale, stencil, colorIsColored, grayIsNeutral, stencilIsBinary, pageSizes, ...err },
+    }
+  } finally { await context.close().catch(() => {}) }
+}
+
 // ---------- main ----------
 const started = Date.now()
 console.log(`[audit] production dist=${distDir}`)
@@ -638,6 +702,7 @@ const scenarios = [
   ['14-vector-line-width-redraw', 'Selected vector line width redraw preserves brush and supports Undo/Redo', s14VectorLineWidthRedraw],
   ['15-crash-recovery', 'Interrupted pagehide offers recovery; restored pixels and clean reload are exact', s15CrashRecovery],
   ['16-nondestructive-filters', 'Raster and vector filters preserve sources and survive clean reload', s16NondestructiveFilters],
+  ['17-print-color-modes', 'Color, grayscale and stencil print modes with exact 100mm page size', s17PrintColorModes],
 ]
 
 const report = {

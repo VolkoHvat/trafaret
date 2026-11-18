@@ -20,7 +20,7 @@ import { useCloudSync } from './hooks/useCloudSync'
 import type { ArtworkReport } from './lib/artwork-analysis'
 import { runEnvironmentDiagnostics, type DeviceDiagnosticsReport } from './lib/diagnostics'
 import { BRUSH_ORDER, DEFAULT_BRUSHES } from './lib/brushes'
-import { blobToDataUrl, makeVectorSvg, withPngDpi } from './lib/output'
+import { blobToDataUrl, makeVectorSvg, withGrayscale, withPngDpi } from './lib/output'
 import {
   createLayerMask, disposeLayerCanvases, downloadBlob, fileToDataURL, loadImage, makeCanvas,
   makePaintLayer, makeVectorLayer, redrawImageLayer, restoreProject,
@@ -103,7 +103,7 @@ export default function App() {
   const [newDpi, setNewDpi] = useState(300)
   const [printWidthMm, setPrintWidthMm] = useState(initialDoc.width / initialDoc.dpi * 25.4)
   const [printHeightMm, setPrintHeightMm] = useState(initialDoc.height / initialDoc.dpi * 25.4)
-  const [printStencil, setPrintStencil] = useState(true)
+  const [printMode, setPrintMode] = useState<'color' | 'grayscale' | 'stencil'>('stencil')
   const [exporting, setExporting] = useState(false)
   const studioRef = useRef<StudioHandle>(null)
   const openProjectRef = useRef<HTMLInputElement>(null)
@@ -449,7 +449,8 @@ export default function App() {
     if (!studioRef.current) return
     setExporting(true)
     try {
-      const blob = await studioRef.current.exportImage(false, printStencil)
+      const raw = await studioRef.current.exportImage(false, printMode === 'stencil')
+      const blob = printMode === 'grayscale' ? await withGrayscale(raw) : raw
       const dataUrl = await blobToDataUrl(blob)
       const frame = document.createElement('iframe')
       frame.className = 'print-frame'
@@ -743,7 +744,7 @@ export default function App() {
           <button className="export-option" disabled={exporting} onClick={() => exportImage(true, false, true)}><strong>PNG активного слоя</strong><span>Чистая линия с учётом маски активного слоя</span></button>
           <button className="export-option" disabled={exporting} onClick={() => exportImage(false, true)}><strong>Трафарет PNG</strong><span>Чёрно-белая высококонтрастная версия</span></button>
           <button className="export-option" disabled={exporting} onClick={exportSvg}><strong><FileCode2 size={16} />Векторный SVG</strong><span>Контуры, узлы, фигуры, цвет и трансформации</span></button>
-          <button className="export-option" disabled={exporting} onClick={openPrint}><strong><Printer size={16} />Печать по размеру</strong><span>Точный размер в миллиметрах и режим трафарета</span></button>
+          <button className="export-option" disabled={exporting} onClick={openPrint}><strong><Printer size={16} />Печать по размеру</strong><span>Миллиметры, цвет, оттенки серого или трафарет</span></button>
           <button className="export-option project-option" onClick={saveProject}><strong>Проект v2 со слоями</strong><span>Файл .tattoo.json: растр, векторы, маски, сканы и DPI</span></button>
         </div>
       </StudioDialog>
@@ -755,7 +756,11 @@ export default function App() {
             <label className="text-field"><span>Высота, мм</span><input type="number" min={10} max={2000} step={0.1} value={Number(printHeightMm.toFixed(2))} onChange={event => updatePrintHeight(Number(event.target.value))} /></label>
           </div>
           <label className="text-field"><span>DPI документа</span><input type="number" min={72} max={1200} value={doc.dpi} onChange={event => setDoc({ ...doc, dpi: Math.max(72, Math.min(1200, Number(event.target.value) || 300)) })} /></label>
-          <label className="check-row"><input type="checkbox" checked={printStencil} onChange={event => setPrintStencil(event.target.checked)} /><span>Подготовить чёрно-белый трафарет</span></label>
+          <label className="select-field"><span>Режим печати</span><select value={printMode} onChange={event => setPrintMode(event.target.value as typeof printMode)}>
+            <option value="color">Цветная</option>
+            <option value="grayscale">Оттенки серого</option>
+            <option value="stencil">Чёрно-белый трафарет</option>
+          </select></label>
           <p className="panel-note">Размер изображения задаётся в миллиметрах независимо от экранного масштаба. Не используйте «По размеру страницы» в диалоге печати.</p>
           <button className="accent-button large" disabled={exporting} onClick={printDocument}><Printer size={17} />Открыть диалог печати</button>
         </div>

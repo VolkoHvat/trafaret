@@ -6,6 +6,7 @@ const packageJson = JSON.parse(readFileSync(new URL('../../package.json', import
   version: string
   build: { win: { artifactName: string }; nsis: { script?: string } }
 }
+const installerNsi = readFileSync(new URL('../../build/installer.nsi', import.meta.url), 'utf8')
 const lockfile = JSON.parse(readFileSync(new URL('../../package-lock.json', import.meta.url), 'utf8')) as {
   name: string
   version: string
@@ -24,5 +25,6 @@ describe('release metadata', () => {
     })
     expect(packageJson.build.win.artifactName).toBe('Trafaret-Windows-x64.exe')
     expect(packageJson.build.nsis.script).toBeUndefined()
+    expect(installerNsi).toContain('!addincludedir "${PROJECT_DIR}\\build"')
   })
 })

@@ -16,7 +16,7 @@ Var oldMenuDirectory
 !include "common.nsh"
 !include "MUI2.nsh"
 !include "multiUser.nsh"
-!addincludedir "/mnt/agents/output/app/build"
+!addincludedir "${PROJECT_DIR}\build"
 !include "trafaretAllowOnlyOneInstallerInstance.nsh"
 
 !ifdef INSTALL_MODE_PER_ALL_USERS

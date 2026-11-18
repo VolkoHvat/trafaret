@@ -88,6 +88,32 @@ export function localPoint(point: VectorObject['points'][number], object: Vector
   return [x, y, point[2]]
 }
 
+export function supportsControlPoints(object: VectorObject): boolean {
+  return object.kind === 'path' || object.kind === 'stroke'
+}
+
+export function moveControlPoint(object: VectorObject, index: number, point: VectorObject['points'][number]): boolean {
+  if (!supportsControlPoints(object) || !object.points[index]) return false
+  const local = localPoint(point, object)
+  object.points[index] = [local[0], local[1], object.points[index][2]]
+  return true
+}
+
+export function nearestControlPoint(object: VectorObject, point: VectorObject['points'][number], tolerance: number): number | undefined {
+  if (!supportsControlPoints(object)) return undefined
+  let nearest = tolerance
+  let index: number | undefined
+  object.points.forEach((candidate, candidateIndex) => {
+    const world = worldPoint(candidate, object)
+    const distance = Math.hypot(point[0] - world[0], point[1] - world[1])
+    if (distance <= nearest) {
+      nearest = distance
+      index = candidateIndex
+    }
+  })
+  return index
+}
+
 export function applyObjectTransform(ctx: CanvasRenderingContext2D, object: VectorObject) {
   const { x: cx, y: cy } = objectOrigin(object)
   ctx.translate(cx + object.transform.x, cy + object.transform.y)

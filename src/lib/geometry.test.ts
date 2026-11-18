@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { VectorObject } from '../types'
 import {
-  applyObjectTransform, baseObjectBounds, localPoint, objectOrigin, objectSvgTransform,
-  shapePath, shapeSvgPath, worldPoint,
+  applyObjectTransform, baseObjectBounds, localPoint, moveControlPoint, nearestControlPoint,
+  objectOrigin, objectSvgTransform, shapePath, shapeSvgPath, supportsControlPoints, worldPoint,
 } from './geometry'
 
 function arcObject(): VectorObject {
@@ -80,5 +80,33 @@ describe('object geometry', () => {
     )
     expect(svg.startsWith('M400.00,60.00')).toBe(true)
     expect(svg.endsWith('L343.62,99.48')).toBe(true)
+  })
+
+  it('moves freehand stroke control points and preserves their pressure', () => {
+    const object = arcObject()
+    object.kind = 'stroke'
+    object.shape = undefined
+    object.points = [[390, 100, 0.3], [450, 140, 0.7], [470, 160, 0.4]]
+    object.transform = { x: 20, y: -10, scale: 1.5, rotation: 30 }
+    const target: [number, number, number] = [500, 200, 0.1]
+    const expected = localPoint(target, object)
+
+    expect(supportsControlPoints(object)).toBe(true)
+    expect(moveControlPoint(object, 1, target)).toBe(true)
+    expect(object.points[1][0]).toBeCloseTo(expected[0], 10)
+    expect(object.points[1][1]).toBeCloseTo(expected[1], 10)
+    expect(object.points[1][2]).toBe(0.7)
+
+    const crowded = arcObject()
+    crowded.kind = 'stroke'
+    crowded.shape = undefined
+    crowded.points = [[500, 500, 0.5], [525, 500, 0.5], [650, 500, 0.5], [675, 500, 0.5]]
+    expect(nearestControlPoint(crowded, [650, 500, 0.5], 37)).toBe(2)
+    expect(nearestControlPoint(crowded, [100, 100, 0.5], 37)).toBeUndefined()
+
+    object.kind = 'shape'
+    object.shape = 'arc'
+    expect(supportsControlPoints(object)).toBe(false)
+    expect(moveControlPoint(object, 1, target)).toBe(false)
   })
 })

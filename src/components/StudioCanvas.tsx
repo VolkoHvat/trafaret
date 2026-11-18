@@ -13,7 +13,8 @@ import { HistoryStore } from '../lib/history'
 import { decodeRasterImage, makeRasterHistoryEntry, type RasterHistoryEntry } from '../lib/raster-history'
 import { copyPoints, StrokeSession, symmetricObjects } from '../lib/stroke-session'
 import {
-  defaultVectorTransform, ensureObjectOrigin, localPoint, objectBounds, objectOrigin, worldPoint,
+  defaultVectorTransform, ensureObjectOrigin, moveControlPoint, nearestControlPoint,
+  objectBounds, objectOrigin, supportsControlPoints, worldPoint,
 } from '../lib/geometry'
 import {
   cloneObjects, hitVectorObject, renderVectorLayer, renderVectorObject, vectorId,
@@ -271,7 +272,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       ctx.beginPath(); ctx.moveTo(rotateX, bounds.minY); ctx.lineTo(rotateX, rotateY); ctx.stroke()
       ctx.fillRect(scaleX - handle / 2, scaleY - handle / 2, handle, handle)
       ctx.beginPath(); ctx.arc(rotateX, rotateY, handle / 2, 0, Math.PI * 2); ctx.fill()
-      if (selected.kind === 'path') {
+      if (supportsControlPoints(selected)) {
         for (const point of selected.points) {
           const [x, y] = worldPoint(point, selected)
           ctx.beginPath(); ctx.arc(x, y, 4.5 * unit, 0, Math.PI * 2); ctx.fill()
@@ -658,13 +659,11 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       const rotateX = (bounds.minX + bounds.maxX) / 2, rotateY = bounds.minY - 22 / view.zoom
       if (Math.hypot(point[0] - bounds.maxX, point[1] - bounds.maxY) <= tolerance) mode = 'scale'
       else if (Math.hypot(point[0] - rotateX, point[1] - rotateY) <= tolerance) mode = 'rotate'
-      else if (selected.kind === 'path') {
-        selected.points.forEach((item, index) => {
-          const world = worldPoint(item, selected)
-          if (Math.hypot(point[0] - world[0], point[1] - world[1]) <= tolerance) {
-            mode = 'node'; nodeIndex = index
-          }
-        })
+      else if (supportsControlPoints(selected)) {
+        const nearest = nearestControlPoint(selected, point, tolerance)
+        if (nearest !== undefined) {
+          mode = 'node'; nodeIndex = nearest
+        }
       }
     }
     if (mode === 'move') {
@@ -705,8 +704,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       const angle = Math.atan2(point[1] - drag.centerY, point[0] - drag.centerX)
       object.transform.rotation = drag.original.transform.rotation + (angle - drag.startAngle) * 180 / Math.PI
     } else if (drag.mode === 'node' && drag.nodeIndex !== undefined) {
-      const local = localPoint(point, object)
-      object.points[drag.nodeIndex] = [local[0], local[1], object.points[drag.nodeIndex][2]]
+      moveControlPoint(object, drag.nodeIndex, point)
     }
     renderVectorLayer(layer)
     scheduleRender()

@@ -314,6 +314,78 @@ async function s05LayerMaskClipToBelow() {
   } finally { await context.close().catch(() => {}) }
 }
 
+// ---------- Scenario 13: freehand vector stroke control point editing + exact Undo ----------
+async function s13VectorStrokeControlPoints() {
+  const { context, page, trackers } = await freshContext()
+  try {
+    const box = await canvasBox(page)
+    await page.click('button[aria-label="Добавить векторный слой"]')
+    await sleep(250)
+    const start = docToClient(box, 500, 500)
+    const end = docToClient(box, 800, 500)
+    await page.mouse.move(start.x, start.y)
+    await page.mouse.down()
+    await page.mouse.move(end.x, end.y, { steps: 12 })
+    await page.mouse.up()
+    await sleep(400)
+    const sampleBefore = await sampleGrid(page)
+
+    const beforeFile = '/tmp/trafaret-control-points-before.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), beforeFile)
+    const beforeJson = JSON.parse(await readFile(beforeFile, 'utf8'))
+    const beforeStroke = beforeJson.layers.find(layer => layer.kind === 'vector')?.objects?.find(object => object.kind === 'stroke')
+    const nodeIndex = beforeStroke ? Math.floor(beforeStroke.points.length / 2) : -1
+    if (!beforeStroke || nodeIndex < 0) throw new Error('freehand vector stroke not found')
+    const [nodeX, nodeY] = beforeStroke.points[nodeIndex]
+
+    await page.keyboard.press('v')
+    await sleep(250)
+    const from = docToClient(box, nodeX, nodeY)
+    const to = docToClient(box, nodeX + 40, nodeY + 120)
+    await page.mouse.move(from.x, from.y)
+    await page.mouse.down()
+    await page.mouse.move(to.x, to.y, { steps: 8 })
+    await page.mouse.up()
+    await sleep(400)
+    const sampleAfter = await sampleGrid(page)
+
+    const afterFile = '/tmp/trafaret-control-points-after.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), afterFile)
+    const afterJson = JSON.parse(await readFile(afterFile, 'utf8'))
+    const afterStroke = afterJson.layers.find(layer => layer.kind === 'vector')?.objects?.find(object => object.id === beforeStroke.id)
+    const moved = afterStroke?.points?.[nodeIndex]
+    const movedX = moved ? moved[0] - beforeStroke.points[nodeIndex][0] : null
+    const movedY = moved ? moved[1] - beforeStroke.points[nodeIndex][1] : null
+    const pressurePreserved = moved?.[2] === beforeStroke.points[nodeIndex][2]
+    const otherPointsPreserved = Boolean(afterStroke && beforeStroke.points.every((point, index) => index === nodeIndex
+      || JSON.stringify(point) === JSON.stringify(afterStroke.points[index])))
+
+    await page.keyboard.press('Control+z')
+    await sleep(400)
+    const sampleUndone = await sampleGrid(page)
+    const undoFile = '/tmp/trafaret-control-points-undo.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), undoFile)
+    const undoJson = JSON.parse(await readFile(undoFile, 'utf8'))
+    const undoStroke = undoJson.layers.find(layer => layer.kind === 'vector')?.objects?.find(object => object.id === beforeStroke.id)
+    const undoPointsExact = JSON.stringify(undoStroke?.points) === JSON.stringify(beforeStroke.points)
+    const undoPixelsExact = exactEqual(sampleUndone, sampleBefore)
+    const err = errorSummary(trackers)
+    const pass = Boolean(afterStroke && Math.abs(movedX - 40) < 1 && Math.abs(movedY - 120) < 1
+      && pressurePreserved && otherPointsPreserved && diffPixels(sampleBefore, sampleAfter) > 0
+      && undoPointsExact && undoPixelsExact && err.clean)
+    await page.screenshot({ path: path.join(shotsDir, '13-vector-control-points.png') })
+    return {
+      status: pass ? 'PASS' : 'FAIL',
+      evidence: {
+        objectKind: beforeStroke.kind, nodeIndex, pointCount: beforeStroke.points.length,
+        movedX, movedY, pressurePreserved, otherPointsPreserved,
+        changedPixels: diffPixels(sampleBefore, sampleAfter), undoPointsExact, undoPixelsExact,
+        ...err,
+      },
+    }
+  } finally { await context.close().catch(() => {}) }
+}
+
 // ---------- main ----------
 const started = Date.now()
 console.log(`[audit] production dist=${distDir}`)
@@ -324,6 +396,7 @@ browser = await chromium.launch(LAUNCH)
 const scenarios = [
   ['04-vector-pen-clips', 'Vector pen path inside selection; saved project proves objects+clips; Delete clears vector pixels; Ctrl+Z exact restore', s04VectorPenClips],
   ['05-layer-mask-cliptobelow', 'Layer mask hides lower right side; clipToBelow on upper clips by masked lower (readPixel proofs)', s05LayerMaskClipToBelow],
+  ['13-vector-stroke-control-points', 'Freehand vector stroke control point moves with pressure preserved and exact Undo', s13VectorStrokeControlPoints],
 ]
 
 const report = {

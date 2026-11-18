@@ -85,8 +85,8 @@ stroke-session, compositor — выделять только отдельным�
 ## Текущий следующий шаг
 
 P0 и P1 (`history`, `geometry`, `stroke-session`, `compositor`) завершены с
-regression tests. Vector control points и line width redraw реализованы.
-Следующий кандидат: recovery / autosave после сбоя из раздела
-«Что заимствовать» в `docs/ENGINE_COMPARISON.md`.
+regression tests. Vector control points, line width redraw и crash recovery
+реализованы. Следующий кандидат: predicted stroke из раздела «Что заимствовать»
+в `docs/ENGINE_COMPARISON.md`.
 
 Новые функции выполнять отдельными проверенными изменениями по правилам выше.

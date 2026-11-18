@@ -33,7 +33,7 @@ export function baseObjectBounds(object: VectorObject): Bounds {
     const [a, b] = object.points
     if (a && b) {
       const rx = Math.abs(b[0] - a[0]), ry = Math.abs(b[1] - a[1])
-      return { minX: a[0] - rx - pad, minY: a[1] - ry - pad, maxX: a[0] + rx + pad, maxY: a[0] + ry + pad }
+      return { minX: a[0] - rx - pad, minY: a[1] - ry - pad, maxX: a[0] + rx + pad, maxY: a[1] + ry + pad }
     }
   }
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity

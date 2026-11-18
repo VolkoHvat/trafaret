@@ -82,8 +82,9 @@ function errorSummary(t) {
 
 let server = null
 let browser = null
-async function freshContext({ viewport = VIEW } = {}) {
+async function freshContext({ viewport = VIEW, initScript } = {}) {
   const context = await browser.newContext({ viewport })
+  if (initScript) await context.addInitScript(initScript)
   const page = await context.newPage()
   const trackers = attachTrackers(page)
   const url = `http://127.0.0.1:${server.address().port}/`
@@ -461,6 +462,59 @@ async function s14VectorLineWidthRedraw() {
   } finally { await context.close().catch(() => {}) }
 }
 
+// ---------- Scenario 15: crash recovery and clean reload ----------
+async function s15CrashRecovery() {
+  const { context, page, trackers } = await freshContext({
+    initScript: () => {
+      if (sessionStorage.getItem('trafaret-test-unclean') === '1') sessionStorage.removeItem('trafaret-test-unclean')
+      window.addEventListener('pagehide', event => {
+        if (sessionStorage.getItem('trafaret-test-unclean') === '1') event.stopImmediatePropagation()
+      }, true)
+    },
+  })
+  try {
+    const box = await canvasBox(page)
+    const start = docToClient(box, 500, 500)
+    const end = docToClient(box, 800, 500)
+    await page.mouse.move(start.x, start.y)
+    await page.mouse.down()
+    await page.mouse.move(end.x, end.y, { steps: 12 })
+    await page.mouse.up()
+    await sleep(1700)
+    const sampleBefore = await sampleGrid(page)
+
+    await page.evaluate(() => { sessionStorage.setItem('trafaret-test-unclean', '1') })
+    await page.reload({ waitUntil: 'load', timeout: 30000 })
+    const recovered = page
+    await recovered.waitForSelector('canvas.drawing-canvas', { timeout: 15000 })
+    await recovered.waitForSelector('.dialog-content:has-text("Восстановить аварийную копию?")', { timeout: 15000 })
+    const dialogShown = true
+    await recovered.click('button.accent-button:has-text("Восстановить проект")')
+    await recovered.waitForSelector('.dialog-content', { state: 'detached', timeout: 15000 })
+    await sleep(500)
+    const sampleRecovered = await sampleGrid(recovered)
+
+    await recovered.reload({ waitUntil: 'load', timeout: 30000 })
+    await recovered.waitForSelector('canvas.drawing-canvas', { timeout: 15000 })
+    await recovered.waitForSelector('.loading-cover', { state: 'detached', timeout: 15000 }).catch(() => {})
+    await sleep(500)
+    const cleanDialogCount = await recovered.locator('.dialog-content:has-text("Восстановить аварийную копию?")').count()
+    const sampleCleanReload = await sampleGrid(recovered)
+    const err = errorSummary(trackers)
+    const pass = dialogShown && cleanDialogCount === 0
+      && exactEqual(sampleRecovered, sampleBefore) && exactEqual(sampleCleanReload, sampleBefore) && err.clean
+    return {
+      status: pass ? 'PASS' : 'FAIL',
+      evidence: {
+        dialogShown, cleanDialogCount,
+        recoveredPixelsExact: exactEqual(sampleRecovered, sampleBefore),
+        cleanReloadPixelsExact: exactEqual(sampleCleanReload, sampleBefore),
+        ...err,
+      },
+    }
+  } finally { await context.close().catch(() => {}) }
+}
+
 // ---------- main ----------
 const started = Date.now()
 console.log(`[audit] production dist=${distDir}`)
@@ -473,6 +527,7 @@ const scenarios = [
   ['05-layer-mask-cliptobelow', 'Layer mask hides lower right side; clipToBelow on upper clips by masked lower (readPixel proofs)', s05LayerMaskClipToBelow],
   ['13-vector-stroke-control-points', 'Freehand vector stroke control point moves with pressure preserved and exact Undo', s13VectorStrokeControlPoints],
   ['14-vector-line-width-redraw', 'Selected vector line width redraw preserves brush and supports Undo/Redo', s14VectorLineWidthRedraw],
+  ['15-crash-recovery', 'Interrupted pagehide offers recovery; restored pixels and clean reload are exact', s15CrashRecovery],
 ]
 
 const report = {

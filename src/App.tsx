@@ -27,6 +27,7 @@ import {
   safeFilename, snapshotProject, uid,
 } from './lib/project'
 import { cloneObjects } from './lib/vector'
+import { RecoverySession } from './lib/recovery'
 import type {
   BrushConfig, BrushId, BrushPreset, DocModel, GuideMode, LayerModel,
   ProjectSnapshot, SelectionModel, ShapeKind, SymmetryMode, ToolId, ViewState,
@@ -94,6 +95,8 @@ export default function App() {
   const [diagnosticsReport, setDiagnosticsReport] = useState<DeviceDiagnosticsReport | null>(null)
   const [saveStatus, setSaveStatus] = useState('Только на этом устройстве')
   const [hydrated, setHydrated] = useState(false)
+  const [recoverySnapshot, setRecoverySnapshot] = useState<ProjectSnapshot | null>(null)
+  const [recovering, setRecovering] = useState(false)
   const [newTitle, setNewTitle] = useState('Новый эскиз')
   const [newWidth, setNewWidth] = useState(2048)
   const [newHeight, setNewHeight] = useState(2048)
@@ -187,20 +190,30 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false
+    const session = new RecoverySession(localStorage)
+    const unclean = session.start()
+    const finish = () => session.finish()
+    window.addEventListener('pagehide', finish)
     get<ProjectSnapshot>(AUTOSAVE_KEY).then(async saved => {
       if (saved && !cancelled) {
-        try { await loadProject(saved) } catch { /* Start with a clean document. */ }
+        if (unclean) setRecoverySnapshot(saved)
+        else {
+          try { await loadProject(saved) } catch { /* Start with a clean document. */ }
+        }
       }
       if (!cancelled) {
         setHydrated(true)
         setTimeout(() => studioRef.current?.fitView(), 80)
       }
     }).catch(() => setHydrated(true))
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      window.removeEventListener('pagehide', finish)
+    }
   }, [loadProject])
 
   useEffect(() => {
-    if (!hydrated) return
+    if (!hydrated || recoverySnapshot) return
     setSaveStatus('Локальное сохранение…')
     const timer = setTimeout(() => {
       try {
@@ -216,7 +229,25 @@ export default function App() {
       }
     }, 1100)
     return () => clearTimeout(timer)
-  }, [doc, layers, activeLayerId, saveVersion, hydrated, projectId, revision])
+  }, [doc, layers, activeLayerId, saveVersion, hydrated, recoverySnapshot, projectId, revision])
+
+  const recoverProject = async () => {
+    if (!recoverySnapshot || recovering) return
+    setRecovering(true)
+    try {
+      await loadProject(recoverySnapshot)
+      setRecoverySnapshot(null)
+      showNotice('Аварийная копия восстановлена')
+    } catch {
+      showNotice('Не удалось восстановить аварийную копию')
+    } finally {
+      setRecovering(false)
+    }
+  }
+
+  const discardRecovery = () => {
+    if (!recovering) setRecoverySnapshot(null)
+  }
 
   useEffect(() => {
     if (maskEditing && !activeLayer?.mask) setMaskEditing(false)
@@ -748,6 +779,20 @@ export default function App() {
       <DiagnosticsDialog open={modal === 'diagnostics'} onOpenChange={open => !open && setModal(null)} report={diagnosticsReport} />
 
       <CloudDialog open={modal === 'cloud'} onOpenChange={open => !open && setModal(null)} cloud={cloud} projectId={projectId} />
+
+      <StudioDialog
+        open={Boolean(recoverySnapshot)} onOpenChange={open => !open && discardRecovery()}
+        title="Восстановить аварийную копию?"
+        description={recoverySnapshot ? `Проект «${recoverySnapshot.doc.title}» · автосохранение ${new Date(recoverySnapshot.savedAt).toLocaleString('ru-RU')}` : undefined}
+      >
+        <div className="form-stack">
+          <p className="panel-note">Предыдущий сеанс завершился сбоем. Пока вы не выберете, аварийная копия останется нетронутой.</p>
+          <button className="accent-button large" disabled={recovering} onClick={recoverProject}>
+            {recovering ? 'Восстанавливаем…' : 'Восстановить проект'}
+          </button>
+          <button className="secondary-button full-width" disabled={recovering} onClick={discardRecovery}>Начать без аварийной копии</button>
+        </div>
+      </StudioDialog>
       {!hydrated && <div className="loading-cover"><span className="brand-mark"><i /></span><p>Открываем рабочее пространство…</p></div>}
     </div>
   )

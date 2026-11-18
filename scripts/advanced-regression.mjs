@@ -370,16 +370,17 @@ async function s13VectorStrokeControlPoints() {
     const undoStroke = undoJson.layers.find(layer => layer.kind === 'vector')?.objects?.find(object => object.id === beforeStroke.id)
     const undoPointsExact = JSON.stringify(undoStroke?.points) === JSON.stringify(beforeStroke.points)
     const undoPixelsExact = exactEqual(sampleUndone, sampleBefore)
+    const predictionExcluded = beforeStroke.points.at(-1)?.[0] === 800 && beforeStroke.points.at(-1)?.[1] === 500
     const err = errorSummary(trackers)
     const pass = Boolean(afterStroke && Math.abs(movedX - 40) < 1 && Math.abs(movedY - 120) < 1
       && pressurePreserved && otherPointsPreserved && diffPixels(sampleBefore, sampleAfter) > 0
-      && undoPointsExact && undoPixelsExact && err.clean)
+      && predictionExcluded && undoPointsExact && undoPixelsExact && err.clean)
     await page.screenshot({ path: path.join(shotsDir, '13-vector-control-points.png') })
     return {
       status: pass ? 'PASS' : 'FAIL',
       evidence: {
         objectKind: beforeStroke.kind, nodeIndex, pointCount: beforeStroke.points.length,
-        movedX, movedY, pressurePreserved, otherPointsPreserved,
+        movedX, movedY, pressurePreserved, otherPointsPreserved, predictionExcluded,
         changedPixels: diffPixels(sampleBefore, sampleAfter), undoPointsExact, undoPixelsExact,
         ...err,
       },

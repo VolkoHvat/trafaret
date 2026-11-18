@@ -101,6 +101,25 @@ export class StrokeSession {
     return symmetricPointSets(this.points, this.doc, this.symmetry, this.radialCount)
   }
 
+  previewPointSets(): StrokePoint[][] {
+    const sets = this.pointSets()
+    if (this.line || this.shape) return sets
+    return sets.map(points => {
+      if (points.length < 2) return points
+      const a = points[points.length - 2], b = points[points.length - 1]
+      const dx = b[0] - a[0], dy = b[1] - a[1]
+      const distance = Math.hypot(dx, dy)
+      if (!distance) return points
+      const predictionDistance = Math.min(32, Math.max(4, distance * 1.5))
+      const predicted: StrokePoint = [
+        b[0] + dx / distance * predictionDistance,
+        b[1] + dy / distance * predictionDistance,
+        b[2],
+      ]
+      return [...points, predicted]
+    })
+  }
+
   rasterRect() {
     const pad = this.brush.size * 2 + 24
     const bounds = pointsBounds(this.pointSets().flat(), pad)

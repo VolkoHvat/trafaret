@@ -47,6 +47,27 @@ describe('StrokeSession', () => {
     expect(sets.every(set => set[0][2] === 0.6)).toBe(true)
   })
 
+  it('adds a short predicted point only to preview sets', () => {
+    const session = makeSession()
+    session.addPoint([20, 20, 0.4])
+
+    expect(session.previewPointSets()[0]).toEqual([[10, 20, 0.2], [20, 20, 0.4], [35, 20, 0.4]])
+    expect(session.pointSets()[0]).toEqual([[10, 20, 0.2], [20, 20, 0.4]])
+
+    const longSegment = makeSession()
+    longSegment.addPoint([50, 20, 0.6])
+    expect(longSegment.previewPointSets()[0].at(-1)).toEqual([82, 20, 0.6])
+    expect(longSegment.pointSets()[0].at(-1)).toEqual([50, 20, 0.6])
+  })
+
+  it('does not predict line or shape endpoints', () => {
+    for (const options of [{ line: true }, { line: false, shape: 'arc' as const }]) {
+      const session = makeSession(options)
+      session.addPoint([30, 40, 0.5])
+      expect(session.previewPointSets()).toEqual(session.pointSets())
+    }
+  })
+
   it('computes a padded raster rect clamped to the document', () => {
     const session = makeSession()
     expect(session.rasterRect()).toEqual({ x: 0, y: 0, width: 42, height: 52 })

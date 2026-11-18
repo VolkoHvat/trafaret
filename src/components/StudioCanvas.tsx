@@ -600,7 +600,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     ctx.clearRect(0, 0, doc.width, doc.height)
     ctx.save()
     clipToSelection(ctx, selection, doc.width, doc.height)
-    const sets = current.pointSets()
+    const sets = complete ? current.pointSets() : current.previewPointSets()
     for (const points of sets) {
       if (current.shape) {
         renderVectorObject(ctx, {

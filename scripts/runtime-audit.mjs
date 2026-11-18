@@ -462,6 +462,46 @@ function testD(current, baseline) {
   }
 }
 
+async function testStrokeLatency(rootDir, label) {
+  const app = await openApp(rootDir)
+  try {
+    const { page } = app
+    await page.evaluate(() => {
+      const samples = []
+      let inputAt = null
+      const canvas = document.querySelector('canvas.drawing-canvas')
+      canvas.addEventListener('pointermove', () => { inputAt = performance.now() }, true)
+      const raf = window.requestAnimationFrame.bind(window)
+      window.requestAnimationFrame = callback => raf(time => {
+        callback(time)
+        if (inputAt !== null) {
+          samples.push(performance.now() - inputAt)
+          inputAt = null
+        }
+      })
+      window.__strokeLatencySamples = samples
+    })
+    const box = await canvasBox(page)
+    const points = []
+    for (let i = 0; i <= 64; i++) {
+      const x = box.docW * (0.2 + 0.6 * i / 64)
+      const y = box.docH * (0.45 + Math.sin(i / 8) * 0.08)
+      points.push(docToClient(box, x, y))
+    }
+    await dispatchPenStroke(page, points, 0.8)
+    await sleep(500)
+    const samples = await page.evaluate(() => window.__strokeLatencySamples.slice())
+    const sorted = samples.filter(value => Number.isFinite(value) && value >= 0).sort((a, b) => a - b)
+    const percentile = q => sorted.length ? sorted[Math.floor((sorted.length - 1) * q)] : null
+    return {
+      label, sampleCount: sorted.length,
+      p50Ms: percentile(0.5), p95Ms: percentile(0.95), maxMs: sorted.at(-1) ?? null,
+      pageErrors: app.pageErrors.slice(),
+      pass: sorted.length > 0 && app.pageErrors.length === 0,
+    }
+  } finally { await app.close() }
+}
+
 // ---------- main ----------
 const started = Date.now()
 console.log(`[audit] current=${currentDir} baseline=${baselineDir || '(none)'}`)
@@ -481,6 +521,14 @@ if (baselineDir) {
 }
 const D = testD(memCurrent, memBaseline)
 console.log('[audit] D:', D.evaluated ? (D.pass ? `PASS prefill -${D.prefillDropPct}% postfill -${D.postfillDropPct}% fill ${D.fillTimeRatioPct}%` : `FAIL ${JSON.stringify(D.checks)}`) : 'not evaluated')
+const latencyCurrent = await testStrokeLatency(currentDir, 'current')
+let latencyBaseline = null
+if (baselineDir) {
+  latencyBaseline = await testStrokeLatency(baselineDir, 'baseline')
+}
+console.log('[audit] E stroke latency: current p50=%sms p95=%sms baseline p50=%sms p95=%sms',
+  latencyCurrent.p50Ms?.toFixed(2), latencyCurrent.p95Ms?.toFixed(2),
+  latencyBaseline?.p50Ms?.toFixed(2) ?? 'n/a', latencyBaseline?.p95Ms?.toFixed(2) ?? 'n/a')
 
 const report = {
   generatedAt: new Date().toISOString(),
@@ -493,7 +541,7 @@ const report = {
       ? 'Working set via Win32_Process (selected fields only, no command lines), only browser descendants of the audit node. Includes shared pages (shared, not unique).'
       : 'RSS via /proc/<pid>/status VmRSS, only descendants of audit node with comm headless_shell/chrome/chromium. RSS includes shared pages (shared, not unique).',
   },
-  tests: { A, B, C: { current: memCurrent, baseline: memBaseline }, D },
+  tests: { A, B, C: { current: memCurrent, baseline: memBaseline }, D, E: { current: latencyCurrent, baseline: latencyBaseline } },
   unverifiedPhysicalDrivers: [
     'Real stylus digitizer drivers (Wacom/Windows Ink) and true pressure curve on physical hardware',
     'Physical multi-touch touchscreen pinch-to-zoom (headless CDP synthesis only)',
@@ -504,6 +552,7 @@ report.summary = {
   A_pass: A.currentGpuVsNoGpu.pass,
   B_pass: B.pass,
   C_memoryPass: D.evaluated ? D.pass : null,
+  E_strokeLatencyPass: latencyCurrent.pass && (latencyBaseline ? latencyBaseline.pass : true),
   memoryOptimization: D.evaluated ? (D.pass ? 'PASS' : 'FAIL') : 'NOT_EVALUATED (no baseline)',
 }
 mkdirSync(path.dirname(outJson), { recursive: true })

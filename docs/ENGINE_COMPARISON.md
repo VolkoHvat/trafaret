@@ -38,14 +38,14 @@
 
 | Область | LOC |
 |---|---|
-| `src/` (приложение) | 7112 |
+| `src/` (приложение) | 7117 |
 | `src/` (тесты) | 1770 |
 | `desktop/` (Electron) + тесты | 676 + 222 |
 | `android/` (Capacitor-обвязка) | 652 |
-| `scripts/` (регрессии, аудит, маркетинг) | 3895 |
+| `scripts/` (регрессии, аудит, маркетинг) | 4005 |
 | Зависимости | 9 prod / 22 dev |
 
-Метод подсчёта: логические строки (`splitlines`), включая последнюю строку без newline. `src/` — 39 файлов `ts/tsx/css` без `*.test.*` (из них `ts/tsx` 6648 + CSS 464 = 7112); `android/` — только собственные файлы в `android/app/src/main` (ровно 14 `java/xml`, сгенерированные исключены); `desktop/` — только `desktop/src` (без `dist/` и тестов сборки).
+Метод подсчёта: логические строки (`splitlines`), включая последнюю строку без newline. `src/` — 39 файлов `ts/tsx/css` без `*.test.*` (из них `ts/tsx` 6653 + CSS 464 = 7117); `android/` — только собственные файлы в `android/app/src/main` (ровно 14 `java/xml`, сгенерированные исключены); `desktop/` — только `desktop/src` (без `dist/` и тестов сборки).
 
 ## Объективно слабее
 
@@ -94,7 +94,7 @@
 - brush presets — пользовательские пресеты кистей вместо фиксированных 7 BrushId;
 - recovery / autosave — **реализовано**: маркер незавершённой сессии, диалог восстановления после сбоя и защита аварийной копии от перезаписи до выбора пользователя;
 - predicted stroke — **реализовано**: короткое экстраполирование до 32 px только в preview, без попадания предсказанных точек в commit или историю;
-- nondestructive ops — неразрушающие трансформации/эффекты поверх слоя, не копируя растр;
+- nondestructive ops — **реализовано для фильтров**: grayscale/contrast/threshold/invert работают на paint, vector и image через отдельный render cache; исходные пиксели и объекты не меняются;
 - print / color — печать и цветовые профили как часть пайплайна «эскиз → готовый трафарет».
 
 **Позже** (цена внедрения выше, отдача для ниши ниже):
@@ -112,7 +112,7 @@
 
 - **PASS** — 121 тест / 18 тестовых файлов (`vitest`): 14 в `src/` + 4 в `desktop/`;
 - **PASS** — `lint`, `build`, `desktop:typecheck`;
-- **PASS** — production regression 8/8, advanced regression 5/5, media regression 3/3;
+- **PASS** — production regression 8/8, advanced regression 6/6, media regression 3/3;
 - **PASS** — StrictMode regression;
 - **PASS** — runtime A/B; Windows RSS и текущий memory-сценарий C выполнены, сравнение D не оценивалось без baseline;
 - **PASS** — paired stroke latency E (63 образца): p50 28,60 → 28,20 мс, p95 33,80 → 32,50 мс; canvas после commit идентичен baseline;

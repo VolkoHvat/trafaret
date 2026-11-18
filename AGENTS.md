@@ -85,8 +85,8 @@ stroke-session, compositor — выделять только отдельным�
 ## Текущий следующий шаг
 
 P0 и P1 (`history`, `geometry`, `stroke-session`, `compositor`) завершены с
-regression tests. Vector control points, line width redraw, crash recovery и
-predicted stroke реализованы. Следующий кандидат: nondestructive ops из раздела
-«Что заимствовать» в `docs/ENGINE_COMPARISON.md`.
+regression tests. Vector control points, line width redraw, crash recovery,
+predicted stroke и nondestructive filters реализованы. Следующий кандидат:
+print / color pipeline из раздела «Что заимствовать» в `docs/ENGINE_COMPARISON.md`.
 
 Новые функции выполнять отдельными проверенными изменениями по правилам выше.

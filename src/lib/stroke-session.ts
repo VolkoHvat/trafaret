@@ -1,0 +1,125 @@
+import type {
+  BrushConfig, DocModel, SelectionModel, ShapeKind, SymmetryMode, VectorObject,
+} from '../types'
+import type { StrokePoint } from './brushes'
+import { defaultVectorTransform, ensureObjectOrigin, pointsBounds } from './geometry'
+
+export const copyPoints = (points: StrokePoint[]): StrokePoint[] => points.map(([x, y, pressure]) => [x, y, pressure])
+
+function rotatePoint(point: StrokePoint, cx: number, cy: number, angle: number): StrokePoint {
+  const cos = Math.cos(angle), sin = Math.sin(angle)
+  const dx = point[0] - cx, dy = point[1] - cy
+  return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos, point[2]]
+}
+
+function symmetricPointSets(points: StrokePoint[], doc: DocModel, mode: SymmetryMode, radialCount: number) {
+  const sets = [points]
+  if (mode === 'vertical') {
+    sets.push(points.map(([x, y, pressure]) => [doc.width - x, y, pressure]))
+  } else if (mode === 'radial') {
+    for (let index = 1; index < radialCount; index++) {
+      const angle = index * Math.PI * 2 / radialCount
+      sets.push(points.map(point => rotatePoint(point, doc.width / 2, doc.height / 2, angle)))
+    }
+  }
+  return sets
+}
+
+export function symmetricObjects(object: VectorObject, doc: DocModel, mode: SymmetryMode, radialCount: number, idFactory: () => string) {
+  const sets = symmetricPointSets(object.points, doc, mode, radialCount)
+  return sets.map((points, index) => ensureObjectOrigin({
+    ...object,
+    id: index === 0 ? object.id : idFactory(),
+    points: copyPoints(points),
+    origin: undefined,
+    brush: { ...object.brush },
+    transform: defaultVectorTransform(),
+  }))
+}
+
+export interface StrokeSessionOptions {
+  pointerId: number
+  layerId: string
+  channel: 'content' | 'mask'
+  point: StrokePoint
+  pen: boolean
+  brush: BrushConfig
+  color: string
+  eraser: boolean
+  line: boolean
+  shape?: ShapeKind
+  vector: boolean
+  symmetry: SymmetryMode
+  radialCount: number
+  doc: DocModel
+}
+
+export class StrokeSession {
+  readonly pointerId: number
+  readonly layerId: string
+  readonly channel: 'content' | 'mask'
+  readonly pen: boolean
+  readonly brush: BrushConfig
+  readonly color: string
+  readonly eraser: boolean
+  readonly shape?: ShapeKind
+  readonly vector: boolean
+  private readonly line: boolean
+  private readonly symmetry: SymmetryMode
+  private readonly radialCount: number
+  private readonly doc: DocModel
+  private points: StrokePoint[]
+
+  constructor(options: StrokeSessionOptions) {
+    this.pointerId = options.pointerId
+    this.layerId = options.layerId
+    this.channel = options.channel
+    this.pen = options.pen
+    this.brush = { ...options.brush }
+    this.color = options.color
+    this.eraser = options.eraser
+    this.line = options.line
+    this.shape = options.shape
+    this.vector = options.vector
+    this.symmetry = options.symmetry
+    this.radialCount = options.radialCount
+    this.doc = options.doc
+    this.points = [copyPoints([options.point])[0]]
+  }
+
+  addPoint(point: StrokePoint) {
+    if (this.line || this.shape) {
+      if (this.points.length === 1) this.points.push(point)
+      else this.points[1] = point
+      return
+    }
+    const last = this.points[this.points.length - 1]
+    if (Math.hypot(point[0] - last[0], point[1] - last[1]) > 0.25) this.points.push(point)
+  }
+
+  pointSets(): StrokePoint[][] {
+    return symmetricPointSets(this.points, this.doc, this.symmetry, this.radialCount)
+  }
+
+  rasterRect() {
+    const pad = this.brush.size * 2 + 24
+    const bounds = pointsBounds(this.pointSets().flat(), pad)
+    const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
+    const x = clamp(Math.floor(bounds.minX), 0, this.doc.width - 1)
+    const y = clamp(Math.floor(bounds.minY), 0, this.doc.height - 1)
+    return {
+      x, y,
+      width: clamp(Math.ceil(bounds.maxX) - x, 1, this.doc.width - x),
+      height: clamp(Math.ceil(bounds.maxY) - y, 1, this.doc.height - y),
+    }
+  }
+
+  vectorObjects(clips: SelectionModel[] | undefined, idFactory: () => string): VectorObject[] {
+    const object: VectorObject = {
+      id: idFactory(), kind: this.shape ? 'shape' : 'stroke', shape: this.shape,
+      points: copyPoints(this.points), brush: { ...this.brush }, color: this.color,
+      pen: this.pen, closed: Boolean(this.shape), clips, transform: defaultVectorTransform(),
+    }
+    return symmetricObjects(object, this.doc, this.symmetry, this.radialCount, idFactory)
+  }
+}

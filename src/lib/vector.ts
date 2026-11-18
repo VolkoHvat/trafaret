@@ -1,4 +1,4 @@
-import { getStrokePathData, renderStroke } from './brushes'
+import { brushRendering, getStrokePathData, renderStroke } from './brushes'
 import type { LayerModel, VectorObject } from '../types'
 import { clipToSelection, selectionSvgPath } from './selection'
 import {
@@ -51,7 +51,7 @@ export function renderVectorObject(ctx: CanvasRenderingContext2D, object: Vector
     ctx.lineWidth = object.brush.size
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
-    if (object.brush.id === 'dotwork') ctx.setLineDash([0.1, Math.max(3, object.brush.size * 2.2)])
+    if (brushRendering(object.brush).dotwork) ctx.setLineDash([0.1, Math.max(3, object.brush.size * 2.2)])
     if (object.fill && (object.closed || object.kind === 'shape')) ctx.fill(path)
     else ctx.stroke(path)
   }
@@ -95,13 +95,13 @@ export function vectorObjectToSvg(object: VectorObject) {
   const transform = objectSvgTransform(object)
   const opacity = object.brush.opacity
   let markup: string
-  if (object.kind === 'stroke' && object.brush.id !== 'dotwork') {
+  if (object.kind === 'stroke' && !brushRendering(object.brush).dotwork) {
     const d = getStrokePathData(object.points, object.brush, true, object.pen)
     markup = `<path d="${d}" fill="${object.color}" fill-opacity="${opacity}" transform="${transform}"/>`
   } else {
     const d = object.kind === 'shape' ? shapeSvgPath(object) : pointsToPath(object.points, object.closed)
     const fill = object.fill && (object.closed || object.kind === 'shape') ? object.color : 'none'
-    const dash = object.brush.id === 'dotwork' ? ` stroke-dasharray="0.1 ${Math.max(3, object.brush.size * 2.2)}"` : ''
+    const dash = brushRendering(object.brush).dotwork ? ` stroke-dasharray="0.1 ${Math.max(3, object.brush.size * 2.2)}"` : ''
     markup = `<path d="${d}" fill="${fill}" stroke="${object.color}" stroke-opacity="${opacity}" stroke-width="${object.brush.size}" stroke-linecap="round" stroke-linejoin="round"${dash} transform="${transform}"/>`
   }
   return wrapVectorClips(markup, object)

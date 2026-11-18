@@ -10,6 +10,7 @@ import { analyzeArtwork, type ArtworkLayer, type ArtworkReport } from '../lib/ar
 import { getLayerRenderCanvas, makeCanvas } from '../lib/project'
 import { HistoryStore } from '../lib/history'
 import { decodeRasterImage, makeRasterHistoryEntry, type RasterHistoryEntry } from '../lib/raster-history'
+import { copyPoints, StrokeSession, symmetricObjects } from '../lib/stroke-session'
 import {
   defaultVectorTransform, ensureObjectOrigin, localPoint, objectBounds, objectOrigin, worldPoint,
 } from '../lib/geometry'
@@ -59,23 +60,6 @@ interface Props {
   onNotice: (message: string) => void
   onSelectionChange: (selection: SelectionModel | null) => void
   onSelectObject: (id: string | null) => void
-}
-
-interface CurrentStroke {
-  pointerId: number
-  layerId: string
-  channel: 'content' | 'mask'
-  points: StrokePoint[]
-  pen: boolean
-  brush: BrushConfig
-  color: string
-  eraser: boolean
-  line: boolean
-  shape?: ShapeKind
-  vector: boolean
-  symmetry: SymmetryMode
-  radialCount: number
-  bounds: { minX: number; minY: number; maxX: number; maxY: number }
 }
 
 interface Rect { x: number; y: number; width: number; height: number }
@@ -133,48 +117,9 @@ interface SelectionDraft {
 const MAX_HISTORY_PIXELS = 32_000_000
 const ANALYSIS_SAMPLE_MAX = 512
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
-const copyPoints = (points: StrokePoint[]) => points.map(([x, y, p]) => [x, y, p] as StrokePoint)
 const selectionClips = (selection: SelectionModel | null) => selection
   ? [JSON.parse(JSON.stringify(selection)) as SelectionModel]
   : undefined
-
-function includePoint(current: CurrentStroke, point: StrokePoint) {
-  const bounds = current.bounds
-  bounds.minX = Math.min(bounds.minX, point[0])
-  bounds.minY = Math.min(bounds.minY, point[1])
-  bounds.maxX = Math.max(bounds.maxX, point[0])
-  bounds.maxY = Math.max(bounds.maxY, point[1])
-}
-
-function rotatePoint(point: StrokePoint, cx: number, cy: number, angle: number): StrokePoint {
-  const cos = Math.cos(angle), sin = Math.sin(angle)
-  const dx = point[0] - cx, dy = point[1] - cy
-  return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos, point[2]]
-}
-
-function symmetricPointSets(points: StrokePoint[], doc: DocModel, mode: SymmetryMode, radialCount: number) {
-  const sets = [points]
-  if (mode === 'vertical') {
-    sets.push(points.map(([x, y, p]) => [doc.width - x, y, p] as StrokePoint))
-  } else if (mode === 'radial') {
-    for (let index = 1; index < radialCount; index++) {
-      sets.push(points.map(point => rotatePoint(point, doc.width / 2, doc.height / 2, index * Math.PI * 2 / radialCount)))
-    }
-  }
-  return sets
-}
-
-function symmetricObjects(object: VectorObject, doc: DocModel, mode: SymmetryMode, radialCount: number) {
-  const sets = symmetricPointSets(object.points, doc, mode, radialCount)
-  return sets.map((points, index) => ensureObjectOrigin({
-    ...object,
-    id: index === 0 ? object.id : vectorId(),
-    points: copyPoints(points),
-    origin: undefined,
-    brush: { ...object.brush },
-    transform: defaultVectorTransform(),
-  }))
-}
 
 export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanvas(props, ref) {
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -188,7 +133,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
   const clippedRef = useRef<HTMLCanvasElement | null>(null)
   const belowRef = useRef<HTMLCanvasElement | null>(null)
   const analysisRef = useRef<HTMLCanvasElement | null>(null)
-  const currentRef = useRef<CurrentStroke | null>(null)
+  const currentRef = useRef<StrokeSession | null>(null)
   const objectDragRef = useRef<ObjectDrag | null>(null)
   const rasterMoveRef = useRef<RasterMove | null>(null)
   const selectionDraftRef = useRef<SelectionDraft | null>(null)
@@ -637,7 +582,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       pen: false, closed, clips: selectionClips(selection), transform: defaultVectorTransform(),
     }
     const before = cloneObjects(layer.objects)
-    const additions = symmetricObjects(object, doc, symmetry, radialCount)
+    const additions = symmetricObjects(object, doc, symmetry, radialCount, vectorId)
     pushObjectHistory(layer, before, [...before, ...additions])
     penDraftRef.current = []
     propsRef.current.onSelectObject(object.id)
@@ -757,7 +702,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     ctx.clearRect(0, 0, doc.width, doc.height)
     ctx.save()
     clipToSelection(ctx, selection, doc.width, doc.height)
-    const sets = symmetricPointSets(current.points, doc, current.symmetry, current.radialCount)
+    const sets = current.pointSets()
     for (const points of sets) {
       if (current.shape) {
         renderVectorObject(ctx, {
@@ -788,15 +733,10 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     }
     redrawCurrent(true)
     if (current.vector) {
-      const object: VectorObject = {
-        id: vectorId(), kind: current.shape ? 'shape' : 'stroke', shape: current.shape,
-        points: copyPoints(current.points), brush: { ...current.brush }, color: current.color,
-        pen: current.pen, closed: Boolean(current.shape), clips: selectionClips(selection), transform: defaultVectorTransform(),
-      }
       const before = cloneObjects(layer.objects)
-      const additions = symmetricObjects(object, doc, current.symmetry, current.radialCount)
+      const additions = current.vectorObjects(selectionClips(selection), vectorId)
       pushObjectHistory(layer, before, [...before, ...additions])
-      propsRef.current.onSelectObject(object.id)
+      propsRef.current.onSelectObject(additions[0].id)
     } else {
       const canvas = channelCanvas(layer, current.channel)
       const ctx = canvas.getContext('2d', { willReadFrequently: true })!
@@ -808,20 +748,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       if (current.channel === 'mask') layer.maskVersion = (layer.maskVersion ?? 0) + 1
       else { layer.pixelVersion += 1; layer.filterKey = undefined }
 
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-      const sets = symmetricPointSets(current.points, doc, current.symmetry, current.radialCount)
-      for (const points of sets) for (const point of points) {
-        minX = Math.min(minX, point[0]); minY = Math.min(minY, point[1])
-        maxX = Math.max(maxX, point[0]); maxY = Math.max(maxY, point[1])
-      }
-      const pad = current.brush.size * 2 + 24
-      const x = clamp(Math.floor(minX - pad), 0, doc.width - 1)
-      const y = clamp(Math.floor(minY - pad), 0, doc.height - 1)
-      const rect = {
-        x, y,
-        width: clamp(Math.ceil(maxX + pad) - x, 1, doc.width - x),
-        height: clamp(Math.ceil(maxY + pad) - y, 1, doc.height - y),
-      }
+      const rect = current.rasterRect()
       const before = obtainBuffer(beforeRef).getContext('2d', { willReadFrequently: true })!.getImageData(rect.x, rect.y, rect.width, rect.height)
       const after = ctx.getImageData(rect.x, rect.y, rect.width, rect.height)
       pushHistory({
@@ -1133,8 +1060,8 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     const pen = event.pointerType === 'pen'
     point[2] = pen ? event.pressure || 0.5 : 0.5
     const eraser = tool === 'eraser'
-    currentRef.current = {
-      pointerId: event.pointerId, layerId: layer.id, channel, points: [point], pen,
+    currentRef.current = new StrokeSession({
+      pointerId: event.pointerId, layerId: layer.id, channel, point, pen, doc,
       color: maskEditing ? '#ffffff' : color, eraser, line: tool === 'line',
       shape: tool === 'shape' ? shapeKind : undefined,
       vector: layer.kind === 'vector' && !maskEditing,
@@ -1143,8 +1070,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
         ...brush, id: 'traditional', opacity: 1, passes: 1, jitter: 0, size: brush.size * 1.35,
         thinning: 0, taperStart: 0, taperEnd: 0, pressureCurve: 'linear',
       } : { ...brush },
-      bounds: { minX: point[0], minY: point[1], maxX: point[0], maxY: point[1] },
-    }
+    })
     redrawCurrent(false)
     scheduleRender()
   }
@@ -1208,17 +1134,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     for (const sample of events) {
       const samplePoint = clientToDoc(sample.clientX, sample.clientY)
       samplePoint[2] = current.pen ? sample.pressure || 0.5 : 0.5
-      if (current.line || current.shape) {
-        if (current.points.length === 1) current.points.push(samplePoint)
-        else current.points[1] = samplePoint
-        includePoint(current, samplePoint)
-      } else {
-        const last = current.points[current.points.length - 1]
-        if (Math.hypot(samplePoint[0] - last[0], samplePoint[1] - last[1]) > 0.25) {
-          current.points.push(samplePoint)
-          includePoint(current, samplePoint)
-        }
-      }
+      current.addPoint(samplePoint)
     }
     redrawCurrent(false)
     scheduleRender()

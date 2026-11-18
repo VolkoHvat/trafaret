@@ -20,28 +20,37 @@ export const DEFAULT_BRUSHES: Record<BrushId, BrushConfig> = {
   dotwork: {
     id: 'dotwork', name: 'Dotwork', family: 'Точка и стипплинг', size: 5, opacity: 0.9,
     thinning: 0.72, streamline: 0.42, smoothing: 0.55, taperStart: 0, taperEnd: 0,
-    pressureCurve: 'soft', passes: 1, jitter: 0.8,
+    pressureCurve: 'soft', passes: 1, jitter: 0.8, strokeMode: 'dotwork',
   },
   whip: {
     id: 'whip', name: 'Whip shade', family: 'Воздушная растяжка', size: 9, opacity: 0.34,
     thinning: 0.84, streamline: 0.62, smoothing: 0.8, taperStart: 0, taperEnd: 34,
-    pressureCurve: 'soft', passes: 3, jitter: 1.6,
+    pressureCurve: 'soft', passes: 3, jitter: 1.6, distributeOpacity: true,
   },
   sketch: {
     id: 'sketch', name: 'Sketch', family: 'Свободный карандаш', size: 3, opacity: 0.42,
     thinning: 0.5, streamline: 0.24, smoothing: 0.42, taperStart: 3, taperEnd: 5,
-    pressureCurve: 'linear', passes: 2, jitter: 0.7,
+    pressureCurve: 'linear', passes: 2, jitter: 0.7, distributeOpacity: true,
   },
   shader: {
     id: 'shader', name: 'Soft shade', family: 'Мягкая тень', size: 44, opacity: 0.12,
     thinning: 0.24, streamline: 0.52, smoothing: 0.75, taperStart: 0, taperEnd: 20,
-    pressureCurve: 'soft', passes: 1, jitter: 0,
+    pressureCurve: 'soft', passes: 1, jitter: 0, blurScale: 1 / 9,
   },
 }
 
 export const BRUSH_ORDER: BrushId[] = ['fineline', 'traditional', 'blackwork', 'dotwork', 'whip', 'sketch', 'shader']
 
 export type StrokePoint = [number, number, number]
+
+export function brushRendering(brush: BrushConfig) {
+  const defaults = DEFAULT_BRUSHES[brush.id]
+  return {
+    dotwork: (brush.strokeMode ?? defaults.strokeMode) === 'dotwork',
+    distributeOpacity: brush.distributeOpacity ?? defaults.distributeOpacity ?? false,
+    blurScale: brush.blurScale ?? defaults.blurScale ?? 0,
+  }
+}
 
 export function pressureEasing(curve: PressureCurve) {
   if (curve === 'soft') return (t: number) => Math.pow(t, 1.55)
@@ -137,6 +146,7 @@ export function renderStroke(
   eraser = false,
 ) {
   if (!points.length) return
+  const rendering = brushRendering(brush)
   ctx.save()
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
@@ -144,7 +154,7 @@ export function renderStroke(
   ctx.strokeStyle = color
   ctx.globalCompositeOperation = eraser ? 'destination-out' : 'source-over'
 
-  if (brush.id === 'dotwork' && !eraser) {
+  if (rendering.dotwork && !eraser) {
     drawDotwork(ctx, points, brush, color)
     ctx.restore()
     return
@@ -167,10 +177,10 @@ export function renderStroke(
       const seed = pass * 2.31 + points.length * 0.07
       ctx.translate(Math.sin(seed) * brush.jitter, Math.cos(seed) * brush.jitter)
     }
-    ctx.globalAlpha = eraser ? 1 : brush.id === 'whip' || brush.id === 'sketch'
+    ctx.globalAlpha = eraser ? 1 : rendering.distributeOpacity
       ? brush.opacity / Math.max(1, brush.passes * 0.65)
       : brush.opacity
-    if (brush.id === 'shader' && !eraser) ctx.filter = `blur(${Math.max(1, brush.size / 9)}px)`
+    if (rendering.blurScale && !eraser) ctx.filter = `blur(${Math.max(1, brush.size * rendering.blurScale)}px)`
     ctx.fill(path)
     ctx.restore()
   }

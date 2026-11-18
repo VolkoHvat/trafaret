@@ -20,6 +20,9 @@ export interface BrushConfig {
   pressureCurve: PressureCurve
   passes: number
   jitter: number
+  strokeMode?: 'outline' | 'dotwork'
+  distributeOpacity?: boolean
+  blurScale?: number
 }
 
 export interface BrushPreset {

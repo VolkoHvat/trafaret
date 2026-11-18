@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 const packageJson = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {
   name: string
   version: string
-  build: { win: { artifactName: string } }
+  build: { win: { artifactName: string }; nsis: { script?: string } }
 }
 const lockfile = JSON.parse(readFileSync(new URL('../../package-lock.json', import.meta.url), 'utf8')) as {
   name: string
@@ -23,5 +23,6 @@ describe('release metadata', () => {
       version: packageJson.version,
     })
     expect(packageJson.build.win.artifactName).toBe('Trafaret-Windows-x64.exe')
+    expect(packageJson.build.nsis.script).toBeUndefined()
   })
 })

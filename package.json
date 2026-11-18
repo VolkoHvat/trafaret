@@ -83,8 +83,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Трафарет",
-      "installerIcon": "build/icon.ico",
-      "script": "installer.nsi"
+      "installerIcon": "build/icon.ico"
     }
   }
 }

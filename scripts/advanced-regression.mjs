@@ -386,6 +386,81 @@ async function s13VectorStrokeControlPoints() {
   } finally { await context.close().catch(() => {}) }
 }
 
+// ---------- Scenario 14: selected vector line width redraw + Undo/Redo ----------
+async function s14VectorLineWidthRedraw() {
+  const { context, page, trackers } = await freshContext()
+  try {
+    const box = await canvasBox(page)
+    await page.click('button[aria-label="Добавить векторный слой"]')
+    await sleep(250)
+    const start = docToClient(box, 500, 500)
+    const end = docToClient(box, 800, 500)
+    await page.mouse.move(start.x, start.y)
+    await page.mouse.down()
+    await page.mouse.move(end.x, end.y, { steps: 12 })
+    await page.mouse.up()
+    await sleep(400)
+    const sampleBefore = await sampleGrid(page)
+
+    const beforeFile = '/tmp/trafaret-line-width-before.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), beforeFile)
+    const beforeJson = JSON.parse(await readFile(beforeFile, 'utf8'))
+    const beforeStroke = beforeJson.layers.find(layer => layer.kind === 'vector')?.objects?.find(object => object.kind === 'stroke')
+    if (!beforeStroke) throw new Error('freehand vector stroke not found')
+
+    const objectSlider = page.locator('label.control-slider', { hasText: 'Толщина объекта' }).locator('input')
+    const brushSlider = page.locator('label.control-slider', { hasText: 'Размер' }).locator('input')
+    if (await objectSlider.count() !== 1) throw new Error('selected object width slider not found')
+    const brushSizeBefore = await brushSlider.inputValue()
+    await objectSlider.evaluate(input => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setter?.call(input, '18')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await sleep(400)
+    const sampleAfter = await sampleGrid(page)
+    const objectSizeAfter = await objectSlider.inputValue()
+    const brushSizeAfter = await brushSlider.inputValue()
+
+    const afterFile = '/tmp/trafaret-line-width-after.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), afterFile)
+    const afterJson = JSON.parse(await readFile(afterFile, 'utf8'))
+    const afterStroke = afterJson.layers.find(layer => layer.kind === 'vector')?.objects?.find(object => object.id === beforeStroke.id)
+
+    await page.keyboard.press('Control+z')
+    await sleep(400)
+    const sampleUndone = await sampleGrid(page)
+    const undoFile = '/tmp/trafaret-line-width-undo.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), undoFile)
+    const undoJson = JSON.parse(await readFile(undoFile, 'utf8'))
+    const undoStroke = undoJson.layers.find(layer => layer.kind === 'vector')?.objects?.find(object => object.id === beforeStroke.id)
+
+    await page.keyboard.press('Control+Shift+z')
+    await sleep(400)
+    const redoFile = '/tmp/trafaret-line-width-redo.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), redoFile)
+    const redoJson = JSON.parse(await readFile(redoFile, 'utf8'))
+    const redoStroke = redoJson.layers.find(layer => layer.kind === 'vector')?.objects?.find(object => object.id === beforeStroke.id)
+
+    const err = errorSummary(trackers)
+    const pass = afterStroke?.brush?.size === 18 && objectSizeAfter === '18'
+      && brushSizeBefore === String(beforeStroke.brush.size) && brushSizeAfter === brushSizeBefore
+      && undoStroke?.brush?.size === beforeStroke.brush.size && redoStroke?.brush?.size === 18
+      && diffPixels(sampleBefore, sampleAfter) > 0 && exactEqual(sampleUndone, sampleBefore) && err.clean
+    return {
+      status: pass ? 'PASS' : 'FAIL',
+      evidence: {
+        beforeSize: beforeStroke.brush.size, afterSize: afterStroke?.brush?.size,
+        undoSize: undoStroke?.brush?.size, redoSize: redoStroke?.brush?.size,
+        objectSizeAfter, brushSizeBefore, brushSizeAfter,
+        changedPixels: diffPixels(sampleBefore, sampleAfter), undoPixelsExact: exactEqual(sampleUndone, sampleBefore),
+        ...err,
+      },
+    }
+  } finally { await context.close().catch(() => {}) }
+}
+
 // ---------- main ----------
 const started = Date.now()
 console.log(`[audit] production dist=${distDir}`)
@@ -397,6 +472,7 @@ const scenarios = [
   ['04-vector-pen-clips', 'Vector pen path inside selection; saved project proves objects+clips; Delete clears vector pixels; Ctrl+Z exact restore', s04VectorPenClips],
   ['05-layer-mask-cliptobelow', 'Layer mask hides lower right side; clipToBelow on upper clips by masked lower (readPixel proofs)', s05LayerMaskClipToBelow],
   ['13-vector-stroke-control-points', 'Freehand vector stroke control point moves with pressure preserved and exact Undo', s13VectorStrokeControlPoints],
+  ['14-vector-line-width-redraw', 'Selected vector line width redraw preserves brush and supports Undo/Redo', s14VectorLineWidthRedraw],
 ]
 
 const report = {

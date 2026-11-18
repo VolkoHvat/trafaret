@@ -25,6 +25,7 @@ export interface StudioHandle {
   redo: () => void
   clearActive: () => void
   deleteSelectedObject: () => void
+  setSelectedObjectSize: (size: number) => void
   commitPen: (closed?: boolean) => void
   cancelDraft: () => void
   fitView: () => void
@@ -453,6 +454,22 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     scheduleRender()
   }, [pushObjectHistory, scheduleRender])
 
+  const setSelectedObjectSize = useCallback((nextSize: number) => {
+    const { layers, activeLayerId, selectedObjectId } = propsRef.current
+    const layer = layers.find(item => item.id === activeLayerId)
+    const selected = layer?.objects?.find(object => object.id === selectedObjectId)
+    if (!layer || layer.kind !== 'vector' || layer.locked || !selected) return
+    const size = clamp(nextSize, 1, 120)
+    if (selected.brush.size === size) return
+    const before = cloneObjects(layer.objects)
+    const after = before.map(object => object.id === selected.id
+      ? { ...object, brush: { ...object.brush, size } }
+      : object)
+    pushObjectHistory(layer, before, after)
+    propsRef.current.onMutated()
+    scheduleRender()
+  }, [pushObjectHistory, scheduleRender])
+
   const commitPen = useCallback((closed = false) => {
     const points = penDraftRef.current
     const { layers, activeLayerId, brush, color, doc, symmetry, radialCount, selection } = propsRef.current
@@ -488,6 +505,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     },
     clearActive,
     deleteSelectedObject,
+    setSelectedObjectSize,
     commitPen,
     cancelDraft: () => {
       currentRef.current = null
@@ -561,7 +579,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       return analyzeArtwork(doc, artworkLayers, image)
     },
     historyPixels: () => historyRef.current.size,
-  }), [clearActive, commitPen, composeTo, deleteSelectedObject, releaseBuffer, restoreHistory, scheduleRender, updateHistoryState])
+  }), [clearActive, commitPen, composeTo, deleteSelectedObject, releaseBuffer, restoreHistory, scheduleRender, setSelectedObjectSize, updateHistoryState])
 
   const clientToDoc = useCallback((clientX: number, clientY: number): StrokePoint => {
     const canvas = canvasRef.current!

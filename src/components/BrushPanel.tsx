@@ -1,4 +1,4 @@
-import { Brush, Check, Pipette, Save, Trash2 } from 'lucide-react'
+import { Brush, Check, Pipette, Save, Spline, Trash2 } from 'lucide-react'
 import type { BrushConfig, BrushId, BrushPreset, PressureCurve } from '../types'
 import { BRUSH_ORDER } from '../lib/brushes'
 import { PanelHeading, Slider } from './UI'
@@ -8,6 +8,7 @@ const PALETTE = ['#171914', '#f2f0e7', '#7d1f2d', '#1f4e46', '#314c76', '#a36938
 export function BrushPanel({
   brushes, activeId, customPresets, activeCustomIndex, onSelect, onSelectCustom,
   onSavePreset, onDeletePreset, onUpdate, color, onColor, stylusOnly, onStylusOnly,
+  selectedObjectSize, onObjectSize,
 }: {
   brushes: Record<BrushId, BrushConfig>
   activeId: BrushId
@@ -22,6 +23,8 @@ export function BrushPanel({
   onColor: (color: string) => void
   stylusOnly: boolean
   onStylusOnly: (value: boolean) => void
+  selectedObjectSize: number | null
+  onObjectSize: (size: number) => void
 }) {
   const brush = activeCustomIndex !== null && customPresets[activeCustomIndex]
     ? customPresets[activeCustomIndex].config
@@ -54,6 +57,14 @@ export function BrushPanel({
           </button>
         ))}
       </div>
+
+      {selectedObjectSize !== null && (
+        <div className="settings-group selected-object-settings">
+          <div className="group-title"><Spline size={14} /><span>Выбранный объект</span></div>
+          <Slider label="Толщина объекта" min={1} max={120} value={selectedObjectSize} unit=" px" onChange={onObjectSize} />
+          <p className="control-hint">Меняется только выбранная векторная линия, не кисть.</p>
+        </div>
+      )}
 
       <div className="settings-group">
         <div className="group-title"><Brush size={14} /><span>Форма линии</span></div>

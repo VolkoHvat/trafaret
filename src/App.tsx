@@ -105,6 +105,7 @@ export default function App() {
   const studioRef = useRef<StudioHandle>(null)
   const openProjectRef = useRef<HTMLInputElement>(null)
   const activeLayer = layers.find(layer => layer.id === activeLayerId)
+  const selectedObject = activeLayer?.objects?.find(object => object.id === selectedObjectId)
   const activeImage = activeLayer?.kind === 'image' ? activeLayer : undefined
   const currentBrush = activeCustomIndex !== null && customPresets[activeCustomIndex]
     ? customPresets[activeCustomIndex].config
@@ -609,6 +610,8 @@ export default function App() {
               onSelectCustom={index => { setActiveCustomIndex(index); setTool('brush') }}
               onSavePreset={saveBrushPreset} onDeletePreset={deleteBrushPreset} onUpdate={updateCurrentBrush}
               color={color} onColor={setColor} stylusOnly={stylusOnly} onStylusOnly={setStylusOnly}
+              selectedObjectSize={selectedObject?.brush.size ?? null}
+              onObjectSize={size => studioRef.current?.setSelectedObjectSize(size)}
             />
             <DocumentPanel
               symmetry={symmetry} radialCount={radialCount} guide={guide} shapeKind={shapeKind}

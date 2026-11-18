@@ -182,25 +182,3 @@ export function makeRasterHistoryEntry(input: {
     before, after, cost: rasterCost(before, after),
   }
 }
-
-// Evicts entries from the front while over budget, always keeping at least one.
-// Mutates `entries` and returns the remaining total cost.
-export function evictOverBudget<T extends { cost: number }>(entries: T[], budget: number, size: number): number {
-  let total = size
-  while (total > budget && entries.length > 1) {
-    const removed = entries.shift()!
-    total -= removed.cost
-  }
-  return total
-}
-
-export function historyCost<T extends { cost: number }>(...stacks: T[][]): number {
-  return stacks.reduce((total, entries) => total + entries.reduce((sum, entry) => sum + entry.cost, 0), 0)
-}
-
-export function pushHistoryEntry<T extends { cost: number }>(entries: T[], redo: T[], entry: T, budget: number): number {
-  const size = historyCost(entries) + entry.cost
-  entries.push(entry)
-  redo.length = 0
-  return evictOverBudget(entries, budget, size)
-}

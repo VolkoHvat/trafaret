@@ -8,9 +8,8 @@ import { floodFill } from '../lib/fill'
 import { clipToSelection, drawSelectionOutline, selectionBounds } from '../lib/selection'
 import { analyzeArtwork, type ArtworkLayer, type ArtworkReport } from '../lib/artwork-analysis'
 import { getLayerRenderCanvas, makeCanvas } from '../lib/project'
-import {
-  decodeRasterImage, historyCost, makeRasterHistoryEntry, pushHistoryEntry, type RasterHistoryEntry,
-} from '../lib/raster-history'
+import { HistoryStore } from '../lib/history'
+import { decodeRasterImage, makeRasterHistoryEntry, type RasterHistoryEntry } from '../lib/raster-history'
 import {
   cloneObjects, defaultVectorTransform, ensureObjectOrigin, hitVectorObject,
   isPristineEmptyLayer, objectBounds, objectOrigin, renderVectorLayer,
@@ -219,9 +218,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
   const pointersRef = useRef(new Map<number, { x: number; y: number }>())
   const pinchRef = useRef<{ distance: number; zoom: number; docX: number; docY: number } | null>(null)
   const panRef = useRef<{ pointerId: number; x: number; y: number; panX: number; panY: number } | null>(null)
-  const historyRef = useRef<HistoryEntry[]>([])
-  const redoRef = useRef<HistoryEntry[]>([])
-  const historySizeRef = useRef(0)
+  const historyRef = useRef(new HistoryStore<HistoryEntry>(MAX_HISTORY_PIXELS))
   const frameRef = useRef<number | null>(null)
   const propsRef = useRef(props)
   useLayoutEffect(() => { propsRef.current = props })
@@ -268,7 +265,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
   }, [])
 
   const updateHistoryState = useCallback(() => {
-    propsRef.current.onHistoryChange(historyRef.current.length > 0, redoRef.current.length > 0)
+    propsRef.current.onHistoryChange(historyRef.current.canUndo, historyRef.current.canRedo)
   }, [])
 
   useEffect(() => {
@@ -548,9 +545,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
   useEffect(() => {
     if (lastSessionRef.current === props.projectSession) return
     lastSessionRef.current = props.projectSession
-    historyRef.current = []
-    redoRef.current = []
-    historySizeRef.current = 0
+    historyRef.current.clear()
     updateHistoryState()
     releaseBuffer(strokeRef)
     releaseBuffer(beforeRef)
@@ -560,7 +555,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
 
   const pushHistory = useCallback((input: HistoryInput) => {
     const entry: HistoryEntry = input.kind === 'objects' ? input : makeRasterHistoryEntry(input)
-    historySizeRef.current = pushHistoryEntry(historyRef.current, redoRef.current, entry, MAX_HISTORY_PIXELS)
+    historyRef.current.push(entry)
     updateHistoryState()
   }, [updateHistoryState])
 
@@ -675,17 +670,15 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
   useImperativeHandle(ref, () => ({
     undo: () => {
       if (busy()) return
-      const entry = historyRef.current.pop()
+      const entry = historyRef.current.undo()
       if (!entry) return
-      redoRef.current.push(entry)
       restoreHistory(entry, 'before')
       updateHistoryState()
     },
     redo: () => {
       if (busy()) return
-      const entry = redoRef.current.pop()
+      const entry = historyRef.current.redo()
       if (!entry) return
-      historyRef.current.push(entry)
       restoreHistory(entry, 'after')
       updateHistoryState()
     },
@@ -734,9 +727,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       ))
     },
     dropHistoryFor: (layerId: string) => {
-      historyRef.current = historyRef.current.filter(entry => entry.layerId !== layerId)
-      redoRef.current = redoRef.current.filter(entry => entry.layerId !== layerId)
-      historySizeRef.current = historyCost(historyRef.current, redoRef.current)
+      historyRef.current.dropLayer(layerId)
       updateHistoryState()
     },
     analyzeArtwork: () => {
@@ -766,7 +757,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       }))
       return analyzeArtwork(doc, artworkLayers, image)
     },
-    historyPixels: () => historySizeRef.current,
+    historyPixels: () => historyRef.current.size,
   }), [clearActive, commitPen, composeTo, deleteSelectedObject, releaseBuffer, restoreHistory, scheduleRender, updateHistoryState])
 
   const clientToDoc = useCallback((clientX: number, clientY: number): StrokePoint => {

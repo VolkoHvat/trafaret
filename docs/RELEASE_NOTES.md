@@ -6,11 +6,11 @@
 
 | Платформа | Файл | Размер, байт | SHA-256 |
 |---|---|---|---|
-| Windows 10/11 x64 | [Трафарет-Windows-x64.exe](https://github.com/VolkoHvat/trafaret/releases/latest/download/Трафарет-Windows-x64.exe) | 109 605 891 | `3cf3e18f54b8b327748728dc525564106772a05748710ac736514da9f592b983` |
-| Android 7.0+ (APK) | [Трафарет-Android.apk](https://github.com/VolkoHvat/trafaret/releases/latest/download/Трафарет-Android.apk) | 4 184 107 | `d469af8aba3ccfd832b4d7170c28f940513cc41dcb0ecad86e89a7eb46296f43` |
+| Windows 10/11 x64 | [Trafaret-Windows-x64.exe](https://github.com/VolkoHvat/trafaret/releases/latest/download/Trafaret-Windows-x64.exe) | 109 605 891 | `3cf3e18f54b8b327748728dc525564106772a05748710ac736514da9f592b983` |
+| Android 7.0+ (APK) | [Trafaret-Android.apk](https://github.com/VolkoHvat/trafaret/releases/latest/download/Trafaret-Android.apk) | 4 184 107 | `d469af8aba3ccfd832b4d7170c28f940513cc41dcb0ecad86e89a7eb46296f43` |
 
-Проверка хеша (Windows, PowerShell): `Get-FileHash .\Трафарет-Windows-x64.exe -Algorithm SHA256`
-Проверка хеша (Linux/macOS): `sha256sum Трафарет-Android.apk`
+Проверка хеша (Windows, PowerShell): `Get-FileHash .\Trafaret-Windows-x64.exe -Algorithm SHA256`
+Проверка хеша (Linux/macOS): `sha256sum Trafaret-Android.apk`
 
 Репозиторий и исходники: [github.com/VolkoHvat/trafaret](https://github.com/VolkoHvat/trafaret) (тег `v1.0`).
 

@@ -11,16 +11,16 @@
 - **Публичная страница:** [volkohvat.github.io/trafaret](https://volkohvat.github.io/trafaret/) (публикуется из каталога `docs/` через GitHub Pages)
 - Локальная копия: [docs/index.html](docs/index.html)
 
-[![Windows](https://img.shields.io/badge/Windows-EXE-0078D6)](https://github.com/VolkoHvat/trafaret/releases/latest/download/Трафарет-Windows-x64.exe)
-[![Android](https://img.shields.io/badge/Android-APK-3DDC84)](https://github.com/VolkoHvat/trafaret/releases/latest/download/Трафарет-Android.apk)
+[![Windows](https://img.shields.io/badge/Windows-EXE-0078D6)](https://github.com/VolkoHvat/trafaret/releases/latest/download/Trafaret-Windows-x64.exe)
+[![Android](https://img.shields.io/badge/Android-APK-3DDC84)](https://github.com/VolkoHvat/trafaret/releases/latest/download/Trafaret-Android.apk)
 [![Исходники](https://img.shields.io/badge/GitHub-исходники-181717)](https://github.com/VolkoHvat/trafaret)
 
 ## Скачать
 
 | Платформа | Файл | Требования |
 |---|---|---|
-| **Windows** | [Трафарет-Windows-x64.exe](https://github.com/VolkoHvat/trafaret/releases/latest/download/Трафарет-Windows-x64.exe) | Windows 10/11, x64 |
-| **Android** | [Трафарет-Android.apk](https://github.com/VolkoHvat/trafaret/releases/latest/download/Трафарет-Android.apk) | Android 7.0+ (minSdk 24) |
+| **Windows** | [Trafaret-Windows-x64.exe](https://github.com/VolkoHvat/trafaret/releases/latest/download/Trafaret-Windows-x64.exe) | Windows 10/11, x64 |
+| **Android** | [Trafaret-Android.apk](https://github.com/VolkoHvat/trafaret/releases/latest/download/Trafaret-Android.apk) | Android 7.0+ (minSdk 24) |
 | **Исходники** | [github.com/VolkoHvat/trafaret](https://github.com/VolkoHvat/trafaret) | Все платформы |
 
 Последний выпуск: [v1.0](https://github.com/VolkoHvat/trafaret/releases/latest). Хеши и детали — в [Release Notes](docs/RELEASE_NOTES.md).
@@ -84,11 +84,11 @@
 ## Установка
 
 **Windows 10/11 (x64)**
-1. Скачайте [Трафарет-Windows-x64.exe](https://github.com/VolkoHvat/trafaret/releases/latest/download/Трафарет-Windows-x64.exe).
+1. Скачайте [Trafaret-Windows-x64.exe](https://github.com/VolkoHvat/trafaret/releases/latest/download/Trafaret-Windows-x64.exe).
 2. Запустите установщик. Приложение **не имеет коммерческой кодовой подписи**, поэтому Windows SmartScreen может показать предупреждение — выберите «Подробнее» → «Выполнить в любом случае».
 
 **Android 7.0+**
-1. Скачайте [Трафарет-Android.apk](https://github.com/VolkoHvat/trafaret/releases/latest/download/Трафарет-Android.apk).
+1. Скачайте [Trafaret-Android.apk](https://github.com/VolkoHvat/trafaret/releases/latest/download/Trafaret-Android.apk).
 2. Разрешите установку из неизвестных источников для браузера/файлового менеджера, когда система спросит, и установите APK. Подпись APK v2/v3, сертификат см. в [Release Notes](docs/RELEASE_NOTES.md).
 
 ## Приватность

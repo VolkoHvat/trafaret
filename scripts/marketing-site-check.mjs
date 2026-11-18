@@ -67,8 +67,8 @@ const browser = await chromium.launch();
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 
 const EXPECTED_CTA = {
-  "cta-windows": "https://github.com/VolkoHvat/trafaret/releases/download/v1.0/Трафарет-Windows-x64.exe",
-  "cta-android": "https://github.com/VolkoHvat/trafaret/releases/download/v1.0/Трафарет-Android.apk",
+  "cta-windows": "https://github.com/VolkoHvat/trafaret/releases/download/v1.0/Trafaret-Windows-x64.exe",
+  "cta-android": "https://github.com/VolkoHvat/trafaret/releases/download/v1.0/Trafaret-Android.apk",
 };
 
 async function settlePage(page) {

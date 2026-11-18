@@ -11,9 +11,10 @@ import { getLayerRenderCanvas, makeCanvas } from '../lib/project'
 import { HistoryStore } from '../lib/history'
 import { decodeRasterImage, makeRasterHistoryEntry, type RasterHistoryEntry } from '../lib/raster-history'
 import {
-  cloneObjects, defaultVectorTransform, ensureObjectOrigin, hitVectorObject,
-  isPristineEmptyLayer, objectBounds, objectOrigin, renderVectorLayer,
-  renderVectorObject, vectorId,
+  defaultVectorTransform, ensureObjectOrigin, localPoint, objectBounds, objectOrigin, worldPoint,
+} from '../lib/geometry'
+import {
+  cloneObjects, hitVectorObject, isPristineEmptyLayer, renderVectorLayer, renderVectorObject, vectorId,
 } from '../lib/vector'
 
 export interface StudioHandle {
@@ -173,29 +174,6 @@ function symmetricObjects(object: VectorObject, doc: DocModel, mode: SymmetryMod
     brush: { ...object.brush },
     transform: defaultVectorTransform(),
   }))
-}
-
-function worldPoint(point: StrokePoint, object: VectorObject): StrokePoint {
-  const { x: cx, y: cy } = objectOrigin(object)
-  const angle = object.transform.rotation * Math.PI / 180
-  const dx = (point[0] - cx) * object.transform.scale
-  const dy = (point[1] - cy) * object.transform.scale
-  return [
-    cx + object.transform.x + dx * Math.cos(angle) - dy * Math.sin(angle),
-    cy + object.transform.y + dx * Math.sin(angle) + dy * Math.cos(angle),
-    point[2],
-  ]
-}
-
-function localPoint(point: StrokePoint, object: VectorObject): StrokePoint {
-  const { x: cx, y: cy } = objectOrigin(object)
-  const angle = -object.transform.rotation * Math.PI / 180
-  const dx = point[0] - cx - object.transform.x, dy = point[1] - cy - object.transform.y
-  return [
-    cx + (dx * Math.cos(angle) - dy * Math.sin(angle)) / object.transform.scale,
-    cy + (dx * Math.sin(angle) + dy * Math.cos(angle)) / object.transform.scale,
-    point[2],
-  ]
 }
 
 export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanvas(props, ref) {

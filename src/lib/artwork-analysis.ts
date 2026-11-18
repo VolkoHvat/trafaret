@@ -1,4 +1,5 @@
 import type { DocModel } from '../types'
+import { boundsCenter, defaultVectorTransform, pointsBounds, transformPoint } from './geometry'
 
 export type AnalysisSeverity = 'info' | 'review'
 export type AnalysisCategory = 'detail' | 'vector' | 'composition'
@@ -132,47 +133,17 @@ export interface ArtworkReport {
 const MM_PER_INCH = 25.4
 
 function objectOrigin(object: ArtworkVectorObject, points: [number, number][]): { x: number; y: number } {
-  if (object.origin) return object.origin
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-  for (const [x, y] of points) {
-    if (x < minX) minX = x
-    if (y < minY) minY = y
-    if (x > maxX) maxX = x
-    if (y > maxY) maxY = y
-  }
-  return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 }
-}
-
-/** Мировые координаты точки с учётом origin и transform (scale + rotation + translation). */
-function worldPoint(
-  p: [number, number],
-  origin: { x: number; y: number },
-  t: { x: number; y: number; scale: number; rotation: number },
-): [number, number] {
-  const rad = (t.rotation * Math.PI) / 180
-  const dx = (p[0] - origin.x) * t.scale
-  const dy = (p[1] - origin.y) * t.scale
-  return [
-    origin.x + t.x + dx * Math.cos(rad) - dy * Math.sin(rad),
-    origin.y + t.y + dx * Math.sin(rad) + dy * Math.cos(rad),
-  ]
+  return object.origin ?? boundsCenter(pointsBounds(points))
 }
 
 /** Геометрический bbox точек объекта в мировых координатах с учётом толщины линии. */
 function objectWorldBounds(object: ArtworkVectorObject, points: [number, number][]): BBox | null {
   if (!points.length) return null
   const origin = objectOrigin(object, points)
-  const t = object.transform ?? { x: 0, y: 0, scale: 1, rotation: 0 }
+  const transform = object.transform ?? defaultVectorTransform()
   const pad = Math.max(0.5, (object.brush?.size ?? 2) / 2)
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-  for (const p of points) {
-    const [x, y] = worldPoint(p, origin, t)
-    if (x < minX) minX = x
-    if (y < minY) minY = y
-    if (x > maxX) maxX = x
-    if (y > maxY) maxY = y
-  }
-  return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad }
+  const worldPoints = points.map(point => transformPoint(point[0], point[1], transform, origin))
+  return pointsBounds(worldPoints, pad)
 }
 
 /** Итеративное RDP-упрощение; epsilon в тех же единицах, что и точки. */

@@ -84,8 +84,8 @@ stroke-session, compositor — выделять только отдельным�
 
 ## Текущий следующий шаг (P1)
 
-P0 (arc/history/conflict/package metadata) завершён с regression tests.
-Следующий шаг: history/geometry/stroke-session/compositor — по плану в
-`docs/ENGINE_COMPARISON.md`.
+P0 (arc/history/conflict/package metadata) и P1 `history` завершены с
+regression tests. Следующий шаг: geometry/stroke-session/compositor — по плану
+в `docs/ENGINE_COMPARISON.md`.
 
 Каждый модуль выполнять отдельным проверенным изменением по правилам выше.

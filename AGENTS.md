@@ -82,10 +82,10 @@ Vitest, ESLint, Tailwind, perfect-freehand.
 stroke-session, compositor — выделять только отдельными проверенными
 изменениями (шаг → тест → ревью → коммит на каждый).
 
-## Текущий следующий шаг (P1)
+## Текущий следующий шаг
 
-P0 (arc/history/conflict/package metadata) и P1 `history`/`geometry`/
-`stroke-session` завершены с regression tests. Следующий шаг: compositor — по
-плану в `docs/ENGINE_COMPARISON.md`.
+P0 и P1 (`history`, `geometry`, `stroke-session`, `compositor`) завершены с
+regression tests. Следующий кандидат: vector control points из раздела
+«Что заимствовать» в `docs/ENGINE_COMPARISON.md`.
 
-Каждый модуль выполнять отдельным проверенным изменением по правилам выше.
+Новые функции выполнять отдельными проверенными изменениями по правилам выше.

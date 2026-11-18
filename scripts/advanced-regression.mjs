@@ -133,6 +133,21 @@ function diffPixels(a, b) {
   return n
 }
 const exactEqual = (a, b) => diffPixels(a, b) === 0
+function diffLocations(a, b, limit = 12) {
+  if (!a || !b) return []
+  const out = []
+  const columns = Math.ceil(a.width / a.step)
+  for (let i = 0; i < a.pixels.length && out.length < limit; i += 4) {
+    if (a.pixels[i] === b.pixels[i] && a.pixels[i + 1] === b.pixels[i + 1]
+      && a.pixels[i + 2] === b.pixels[i + 2] && a.pixels[i + 3] === b.pixels[i + 3]) continue
+    const pixel = i / 4
+    out.push({
+      x: (pixel % columns) * a.step, y: Math.floor(pixel / columns) * a.step,
+      before: a.pixels.slice(i, i + 4), after: b.pixels.slice(i, i + 4),
+    })
+  }
+  return out
+}
 
 async function readPixel(page, docX, docY) {
   return page.evaluate(([x, y]) => {
@@ -516,6 +531,99 @@ async function s15CrashRecovery() {
   } finally { await context.close().catch(() => {}) }
 }
 
+// ---------- Scenario 16: nondestructive filters preserve raster/vector sources ----------
+async function s16NondestructiveFilters() {
+  const { context, page, trackers } = await freshContext()
+  try {
+    const box = await canvasBox(page)
+    const drawStroke = async (x, y) => {
+      const start = docToClient(box, x, y)
+      const end = docToClient(box, x + 300, y)
+      await page.mouse.move(start.x, start.y)
+      await page.mouse.down()
+      await page.mouse.move(end.x, end.y, { steps: 12 })
+      await page.mouse.up()
+      await sleep(400)
+    }
+    const brushSlider = page.locator('label.control-slider', { hasText: 'Размер' }).locator('input')
+    await brushSlider.evaluate(input => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setter?.call(input, '16')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await drawStroke(500, 450)
+    const beforeFile = '/tmp/trafaret-filters-before.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), beforeFile)
+    const beforeJson = JSON.parse(await readFile(beforeFile, 'utf8'))
+    const beforePaint = beforeJson.layers.find(layer => layer.kind === 'paint')
+    const sampleBefore = await sampleGrid(page, 4)
+
+    await page.check('.scan-section label.check-row:has-text("Инвертировать") input')
+    await sleep(400)
+    const sampleRasterFiltered = await sampleGrid(page, 4)
+
+    await page.click('button[aria-label="Добавить векторный слой"]')
+    await sleep(250)
+    await drawStroke(500, 700)
+    const vectorBeforeFile = '/tmp/trafaret-filters-vector-before.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), vectorBeforeFile)
+    const vectorBeforeJson = JSON.parse(await readFile(vectorBeforeFile, 'utf8'))
+    const beforeVector = vectorBeforeJson.layers.find(layer => layer.kind === 'vector')
+
+    await page.check('.scan-section label.check-row:has-text("Инвертировать") input')
+    await sleep(400)
+    await page.click('button[aria-label="Кисть (B)"]')
+    await sleep(250)
+    const sampleFiltered = await sampleGrid(page, 4)
+    const filteredProbe = await readPixel(page, 650, 450)
+    const afterFile = '/tmp/trafaret-filters-after.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), afterFile)
+    const afterJson = JSON.parse(await readFile(afterFile, 'utf8'))
+    const afterPaint = afterJson.layers.find(layer => layer.kind === 'paint')
+    const afterVector = afterJson.layers.find(layer => layer.kind === 'vector')
+
+    await sleep(1300)
+    await page.reload({ waitUntil: 'load', timeout: 30000 })
+    await page.waitForSelector('canvas.drawing-canvas', { timeout: 15000 })
+    await page.waitForSelector('.loading-cover', { state: 'detached', timeout: 15000 }).catch(() => {})
+    await sleep(500)
+    const sampleReloaded = await sampleGrid(page, 4)
+    const reloadProbe = await readPixel(page, 650, 450)
+    await page.screenshot({ path: path.join(shotsDir, '16-filters-reloaded.png') })
+    const reloadFile = '/tmp/trafaret-filters-reloaded.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), reloadFile)
+    const reloadJson = JSON.parse(await readFile(reloadFile, 'utf8'))
+    const reloadPaint = reloadJson.layers.find(layer => layer.kind === 'paint')
+    const reloadVector = reloadJson.layers.find(layer => layer.kind === 'vector')
+    const err = errorSummary(trackers)
+    const pass = afterPaint?.data === beforePaint?.data
+      && JSON.stringify(afterVector?.objects) === JSON.stringify(beforeVector?.objects)
+      && afterPaint?.filters?.invert === true && afterVector?.filters?.invert === true
+      && diffPixels(sampleBefore, sampleRasterFiltered) > 0
+      && diffPixels(sampleRasterFiltered, sampleFiltered) > 0
+      && exactEqual(sampleReloaded, sampleFiltered) && err.clean
+    return {
+      status: pass ? 'PASS' : 'FAIL',
+      evidence: {
+        rasterSourceUnchanged: afterPaint?.data === beforePaint?.data,
+        vectorSourceUnchanged: JSON.stringify(afterVector?.objects) === JSON.stringify(beforeVector?.objects),
+        rasterFilterPersisted: afterPaint?.filters?.invert === true,
+        vectorFilterPersisted: afterVector?.filters?.invert === true,
+        reloadPixelsExact: exactEqual(sampleReloaded, sampleFiltered),
+        rasterFilterChangedPixels: diffPixels(sampleBefore, sampleRasterFiltered),
+        vectorFilterChangedPixels: diffPixels(sampleRasterFiltered, sampleFiltered),
+        reloadDiffPixels: diffPixels(sampleFiltered, sampleReloaded),
+        reloadDiffLocations: diffLocations(sampleFiltered, sampleReloaded),
+        filteredHash: sampleFiltered.hash, reloadHash: sampleReloaded.hash,
+        filteredProbe, reloadProbe, reloadSize: [sampleReloaded.width, sampleReloaded.height],
+        reloadRasterFilter: reloadPaint?.filters, reloadVectorFilter: reloadVector?.filters,
+        ...err,
+      },
+    }
+  } finally { await context.close().catch(() => {}) }
+}
+
 // ---------- main ----------
 const started = Date.now()
 console.log(`[audit] production dist=${distDir}`)
@@ -529,6 +637,7 @@ const scenarios = [
   ['13-vector-stroke-control-points', 'Freehand vector stroke control point moves with pressure preserved and exact Undo', s13VectorStrokeControlPoints],
   ['14-vector-line-width-redraw', 'Selected vector line width redraw preserves brush and supports Undo/Redo', s14VectorLineWidthRedraw],
   ['15-crash-recovery', 'Interrupted pagehide offers recovery; restored pixels and clean reload are exact', s15CrashRecovery],
+  ['16-nondestructive-filters', 'Raster and vector filters preserve sources and survive clean reload', s16NondestructiveFilters],
 ]
 
 const report = {
@@ -547,6 +656,7 @@ const report = {
 
 let pass = 0, fail = 0
 for (const [id, description, fn] of scenarios) {
+  if (args.only && id !== args.only) continue
   const t0 = Date.now()
   try {
     const result = await fn()

@@ -3,15 +3,18 @@ import { FileImage, ScanLine } from 'lucide-react'
 import type { LayerModel, ScanFilters } from '../types'
 import { PanelHeading, Slider } from './UI'
 
+const DEFAULT_FILTERS: ScanFilters = { grayscale: false, contrast: 100, threshold: 0, invert: false }
+
 export function ScanPanel({ layer, onImport, onUpdate }: {
   layer?: LayerModel
   onImport: (file: File) => void
   onUpdate: (patch: Partial<LayerModel>) => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const filters = layer?.filters
+  const filters = layer?.filters ?? DEFAULT_FILTERS
+  const isImage = layer?.kind === 'image'
   const updateFilters = (patch: Partial<ScanFilters>) => {
-    if (!layer || !filters) return
+    if (!layer) return
     onUpdate({ filters: { ...filters, ...patch }, filterKey: undefined })
   }
   const updateTransform = (patch: { scale?: number; rotation?: number; x?: number; y?: number }) => {
@@ -35,15 +38,18 @@ export function ScanPanel({ layer, onImport, onUpdate }: {
         event.target.value = ''
       }} />
       <button className="secondary-button full-width" onClick={() => inputRef.current?.click()}><FileImage size={16} />Импортировать изображение</button>
-      {!layer || !filters ? (
-        <p className="panel-note">Добавьте скан или выберите его в слоях. Новый чистый слой для линии появится автоматически.</p>
+      {!layer ? (
+        <p className="panel-note">Добавьте скан или выберите слой. Новый чистый слой для линии появится автоматически.</p>
       ) : (
         <div className="settings-group scan-settings">
           <div className="group-title"><ScanLine size={14} /><span>{layer.name}</span></div>
-          <Slider label="Масштаб" min={0.1} max={3} step={0.05} value={layer.transform?.scale ?? 1} onChange={(scale) => updateTransform({ scale })} />
-          <Slider label="Поворот" min={-180} max={180} value={layer.transform?.rotation ?? 0} unit="°" onChange={(rotation) => updateTransform({ rotation })} />
-          <Slider label="Смещение X" min={-2000} max={2000} value={layer.transform?.x ?? 0} unit=" px" onChange={(x) => updateTransform({ x })} />
-          <Slider label="Смещение Y" min={-2000} max={2000} value={layer.transform?.y ?? 0} unit=" px" onChange={(y) => updateTransform({ y })} />
+          {isImage && <>
+            <Slider label="Масштаб" min={0.1} max={3} step={0.05} value={layer.transform?.scale ?? 1} onChange={(scale) => updateTransform({ scale })} />
+            <Slider label="Поворот" min={-180} max={180} value={layer.transform?.rotation ?? 0} unit="°" onChange={(rotation) => updateTransform({ rotation })} />
+            <Slider label="Смещение X" min={-2000} max={2000} value={layer.transform?.x ?? 0} unit=" px" onChange={(x) => updateTransform({ x })} />
+            <Slider label="Смещение Y" min={-2000} max={2000} value={layer.transform?.y ?? 0} unit=" px" onChange={(y) => updateTransform({ y })} />
+          </>}
+          {!isImage && <p className="control-hint">Эффекты применяются при наложении. Исходные пиксели и векторные объекты не меняются.</p>}
           <Slider label="Контраст" min={40} max={260} value={filters.contrast} unit="%" onChange={(contrast) => updateFilters({ contrast })} />
           <Slider label="Порог линии" min={0} max={255} value={filters.threshold} onChange={(threshold) => updateFilters({ threshold })} />
           <p className="control-hint">0 — без постеризации. Увеличивайте порог для чистого трафарета.</p>

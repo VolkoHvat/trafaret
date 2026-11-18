@@ -109,7 +109,6 @@ export default function App() {
   const openProjectRef = useRef<HTMLInputElement>(null)
   const activeLayer = layers.find(layer => layer.id === activeLayerId)
   const selectedObject = activeLayer?.objects?.find(object => object.id === selectedObjectId)
-  const activeImage = activeLayer?.kind === 'image' ? activeLayer : undefined
   const currentBrush = activeCustomIndex !== null && customPresets[activeCustomIndex]
     ? customPresets[activeCustomIndex].config
     : brushes[brushId]
@@ -325,7 +324,7 @@ export default function App() {
   const updateActiveLayer = (patch: Partial<LayerModel>) => {
     if (!activeLayer) return
     const next = { ...activeLayer, ...patch }
-    if (patch.transform) redrawImageLayer(next)
+    if (patch.transform && activeLayer.kind === 'image') redrawImageLayer(next)
     if (patch.filters || patch.transform) next.filterKey = undefined
     if (patch.mask === undefined && Object.prototype.hasOwnProperty.call(patch, 'mask')) setMaskEditing(false)
     changeLayers(layers.map(layer => layer.id === activeLayer.id ? next : layer))
@@ -690,7 +689,7 @@ export default function App() {
               }}
               onMaskEditing={setMaskEditing}
             />
-            <ScanPanel layer={activeImage} onImport={importScan} onUpdate={updateActiveLayer} />
+            <ScanPanel layer={activeLayer} onImport={importScan} onUpdate={updateActiveLayer} />
           </div>
         </aside>
       </div>

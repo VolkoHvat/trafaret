@@ -38,14 +38,14 @@
 
 | Область | LOC |
 |---|---|
-| `src/` (приложение) | 6993 |
+| `src/` (приложение) | 7025 |
 | `src/` (тесты) | 1717 |
 | `desktop/` (Electron) + тесты | 676 + 222 |
 | `android/` (Capacitor-обвязка) | 652 |
-| `scripts/` (регрессии, аудит, маркетинг) | 3714 |
+| `scripts/` (регрессии, аудит, маркетинг) | 3790 |
 | Зависимости | 9 prod / 22 dev |
 
-Метод подсчёта: логические строки (`splitlines`), включая последнюю строку без newline. `src/` — 38 файлов `ts/tsx/css` без `*.test.*` (из них `ts/tsx` 6529 + CSS 464 = 6993); `android/` — только собственные файлы в `android/app/src/main` (ровно 14 `java/xml`, сгенерированные исключены); `desktop/` — только `desktop/src` (без `dist/` и тестов сборки).
+Метод подсчёта: логические строки (`splitlines`), включая последнюю строку без newline. `src/` — 38 файлов `ts/tsx/css` без `*.test.*` (из них `ts/tsx` 6561 + CSS 464 = 7025); `android/` — только собственные файлы в `android/app/src/main` (ровно 14 `java/xml`, сгенерированные исключены); `desktop/` — только `desktop/src` (без `dist/` и тестов сборки).
 
 ## Объективно слабее
 
@@ -90,7 +90,7 @@
 
 **Сейчас** (прямой эффект на качество лайнворка):
 - vector control points — **реализовано**: опорные точки pen-path и freehand vector-штрихов редактируются после отрисовки, включая transformed objects, выбор ближайшего узла и точное Undo;
-- line width redraw — локальное изменение толщины уже проведённой линии (CSP);
+- line width redraw — **реализовано**: слайдер меняет толщину только выбранного векторного объекта, сохраняет глобальную кисть и поддерживает Undo/Redo;
 - brush presets — пользовательские пресеты кистей вместо фиксированных 7 BrushId;
 - recovery / autosave — восстановление документа после сбоя (есть у CSP, у нас пробел; у Krita в официальном источнике не заявлено);
 - predicted stroke — предсказание штриха для снижения воспринимаемой задержки пера;
@@ -112,7 +112,7 @@
 
 - **PASS** — 117 тестов / 17 тестовых файлов (`vitest`): 13 в `src/` + 4 в `desktop/`;
 - **PASS** — `lint`, `build`, `desktop:typecheck`;
-- **PASS** — production regression 8/8, advanced regression 3/3, media regression 3/3;
+- **PASS** — production regression 8/8, advanced regression 4/4, media regression 3/3;
 - **PASS** — StrictMode regression;
 - **PASS** — runtime A/B; Windows RSS и текущий memory-сценарий C выполнены, сравнение D не оценивалось без baseline;
 - **PASS** — реальный Electron в режимах default и disable-gpu: sandbox/security, 10 диагностик, pen/palm/pinch, без ошибок и внешних запросов.

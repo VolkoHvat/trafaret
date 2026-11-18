@@ -85,9 +85,9 @@ stroke-session, compositor — выделять только отдельным�
 ## Текущий следующий шаг
 
 P0 и P1 (`history`, `geometry`, `stroke-session`, `compositor`) завершены с
-regression tests. Vector control points, line width redraw, crash recovery,
-predicted stroke, nondestructive filters и print color modes реализованы.
-Следующий кандидат: полный ICC-цветоменеджмент из раздела «Позже» в
-`docs/ENGINE_COMPARISON.md`.
+regression tests. v1.1.0 подготовлен: артефакты собраны, проверки и release
+notes завершены. Перед публикацией нужно подписать Android APK и провести
+ручные проверки. После v1.1 следующий кандидат: кривые Безье и управляющие
+ручки; ICC и PSD позже.
 
 Новые функции выполнять отдельными проверенными изменениями по правилам выше.

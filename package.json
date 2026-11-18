@@ -1,7 +1,7 @@
 {
-  "name": "my-app",
+  "name": "trafaret",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "main": "desktop/dist/main.js",
   "scripts": {
@@ -73,7 +73,7 @@
       "target": [
         "nsis"
       ],
-      "artifactName": "Trafaret-Setup-${version}.exe",
+      "artifactName": "Trafaret-Windows-x64.exe",
       "icon": "build/icon.ico"
     },
     "nsis": {

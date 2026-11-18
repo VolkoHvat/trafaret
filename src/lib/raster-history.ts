@@ -193,3 +193,14 @@ export function evictOverBudget<T extends { cost: number }>(entries: T[], budget
   }
   return total
 }
+
+export function historyCost<T extends { cost: number }>(...stacks: T[][]): number {
+  return stacks.reduce((total, entries) => total + entries.reduce((sum, entry) => sum + entry.cost, 0), 0)
+}
+
+export function pushHistoryEntry<T extends { cost: number }>(entries: T[], redo: T[], entry: T, budget: number): number {
+  const size = historyCost(entries) + entry.cost
+  entries.push(entry)
+  redo.length = 0
+  return evictOverBudget(entries, budget, size)
+}

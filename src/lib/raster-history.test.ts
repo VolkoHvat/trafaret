@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import {
-  decodeRasterData, type EncodedRaster, encodeRasterData, evictOverBudget, rasterCost,
+  decodeRasterData, type EncodedRaster, encodeRasterData, evictOverBudget, historyCost,
+  pushHistoryEntry, rasterCost,
 } from './raster-history'
 
 function mulberry32(seed: number) {
@@ -147,6 +148,19 @@ describe('raster-history pixel RLE', () => {
     const size = evictOverBudget(entries, 100, 180)
     expect(size).toBe(70)
     expect(entries.map(entry => entry.cost)).toEqual([40, 30])
+  })
+
+  it('shares the budget with redo and discards redo cost on a new entry', () => {
+    const entries = [{ cost: 60 }, { cost: 50 }]
+    const redo = [{ cost: 40 }]
+    expect(historyCost(entries, redo)).toBe(150)
+
+    const size = pushHistoryEntry(entries, redo, { cost: 30 }, 100)
+
+    expect(redo).toEqual([])
+    expect(entries).toEqual([{ cost: 50 }, { cost: 30 }])
+    expect(size).toBe(80)
+    expect(size).toBe(historyCost(entries, redo))
   })
 
   it('always keeps at least one entry even when it exceeds the budget', () => {

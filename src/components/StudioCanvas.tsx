@@ -9,7 +9,7 @@ import { clipToSelection, drawSelectionOutline, selectionBounds } from '../lib/s
 import { analyzeArtwork, type ArtworkLayer, type ArtworkReport } from '../lib/artwork-analysis'
 import { getLayerRenderCanvas, makeCanvas } from '../lib/project'
 import {
-  decodeRasterImage, evictOverBudget, makeRasterHistoryEntry, type RasterHistoryEntry,
+  decodeRasterImage, historyCost, makeRasterHistoryEntry, pushHistoryEntry, type RasterHistoryEntry,
 } from '../lib/raster-history'
 import {
   cloneObjects, defaultVectorTransform, ensureObjectOrigin, hitVectorObject,
@@ -560,9 +560,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
 
   const pushHistory = useCallback((input: HistoryInput) => {
     const entry: HistoryEntry = input.kind === 'objects' ? input : makeRasterHistoryEntry(input)
-    historyRef.current.push(entry)
-    historySizeRef.current = evictOverBudget(historyRef.current, MAX_HISTORY_PIXELS, historySizeRef.current + entry.cost)
-    redoRef.current = []
+    historySizeRef.current = pushHistoryEntry(historyRef.current, redoRef.current, entry, MAX_HISTORY_PIXELS)
     updateHistoryState()
   }, [updateHistoryState])
 
@@ -679,7 +677,6 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       if (busy()) return
       const entry = historyRef.current.pop()
       if (!entry) return
-      historySizeRef.current -= entry.cost
       redoRef.current.push(entry)
       restoreHistory(entry, 'before')
       updateHistoryState()
@@ -689,7 +686,6 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       const entry = redoRef.current.pop()
       if (!entry) return
       historyRef.current.push(entry)
-      historySizeRef.current += entry.cost
       restoreHistory(entry, 'after')
       updateHistoryState()
     },
@@ -740,7 +736,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     dropHistoryFor: (layerId: string) => {
       historyRef.current = historyRef.current.filter(entry => entry.layerId !== layerId)
       redoRef.current = redoRef.current.filter(entry => entry.layerId !== layerId)
-      historySizeRef.current = historyRef.current.reduce((sum, entry) => sum + entry.cost, 0)
+      historySizeRef.current = historyCost(historyRef.current, redoRef.current)
       updateHistoryState()
     },
     analyzeArtwork: () => {

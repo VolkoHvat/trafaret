@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // Dev-only runtime audit lab: deterministic render, pointer/touch behavior, RSS memory.
-// Not part of the app bundle. No env/credentials/CLI ps args — only /proc reads.
+// Not part of the app bundle. No env/credentials/process command lines.
+// RSS uses /proc on Linux and selected Win32_Process fields on Windows.
 import http from 'node:http'
+import { execFileSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -46,7 +48,7 @@ function serve(root) {
   return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(server)))
 }
 
-// ---- safe RSS: only browser descendants of THIS audit node process, via /proc pid/ppid/comm/VmRSS ----
+// ---- safe RSS: only browser descendants of THIS audit node process ----
 const selfPid = process.pid
 function readStatus(pid) {
   try {
@@ -57,32 +59,45 @@ function readStatus(pid) {
     return { pid, ppid, comm, vmRSSKb: vmRSS ? Number(vmRSS) : null }
   } catch { return null }
 }
-function isDescendantOfAudit(pid) {
-  let cur = pid
-  for (let depth = 0; depth < 64; depth++) {
-    const info = readStatus(cur)
-    if (!info) return false
-    if (info.ppid === selfPid) return true
-    if (info.ppid <= 1) return false
-    cur = info.ppid
+function processTable() {
+  if (process.platform === 'win32') {
+    const output = execFileSync('powershell.exe', [
+      '-NoProfile', '-NonInteractive', '-Command',
+      "Get-CimInstance Win32_Process -Filter \"Name LIKE 'chrome%' OR Name LIKE 'headless_shell%'\" | Select-Object ProcessId,ParentProcessId,Name,WorkingSetSize | ConvertTo-Json -Compress",
+    ], { encoding: 'utf8', windowsHide: true, maxBuffer: 4 * 1024 * 1024 })
+    const parsed = JSON.parse(output)
+    const rows = Array.isArray(parsed) ? parsed : [parsed]
+    return rows.map(row => ({
+      pid: Number(row.ProcessId), ppid: Number(row.ParentProcessId),
+      comm: String(row.Name).replace(/\.exe$/i, ''),
+      vmRSSKb: Math.round(Number(row.WorkingSetSize) / 1024),
+    }))
   }
-  return false
-}
-function browserRSSKb() {
-  const names = /^(headless_shell|chrome|chromium|chrome-headless)/
-  const seen = new Set()
   const procs = []
   for (const entry of readdirSync('/proc')) {
     if (!/^\d+$/.test(entry)) continue
-    const pid = Number(entry)
-    if (pid === selfPid || seen.has(pid)) continue
-    const info = readStatus(pid)
-    if (!info || info.vmRSSKb === null) continue
-    if (!names.test(info.comm)) continue
-    if (!isDescendantOfAudit(pid)) continue
-    seen.add(pid)
-    procs.push(info)
+    const info = readStatus(Number(entry))
+    if (info) procs.push(info)
   }
+  return procs
+}
+function browserRSSKb() {
+  const names = /^(headless_shell|chrome|chromium|chrome-headless)/
+  const table = processTable()
+  const byPid = new Map(table.map(info => [info.pid, info]))
+  const isDescendantOfAudit = pid => {
+    let cur = pid
+    for (let depth = 0; depth < 64; depth++) {
+      const info = byPid.get(cur)
+      if (!info) return false
+      if (info.ppid === selfPid) return true
+      if (info.ppid <= 1) return false
+      cur = info.ppid
+    }
+    return false
+  }
+  const procs = table.filter(info => info.pid !== selfPid && info.vmRSSKb !== null
+    && names.test(info.comm) && isDescendantOfAudit(info.pid))
   const total = procs.reduce((sum, p) => sum + p.vmRSSKb, 0)
   return { totalKb: total, procs: procs.map(p => ({ pid: p.pid, comm: p.comm, rssKb: p.vmRSSKb })), sharedNotUnique: true }
 }
@@ -474,7 +489,9 @@ const report = {
     node: process.version,
     playwright: JSON.parse(readFileSync(new URL('../node_modules/playwright/package.json', import.meta.url), 'utf8')).version,
     viewport: VIEW,
-    rssNote: 'RSS via /proc/<pid>/status VmRSS, only descendants of audit node with comm headless_shell/chrome/chromium. RSS includes shared pages (shared, not unique).',
+    rssNote: process.platform === 'win32'
+      ? 'Working set via Win32_Process (selected fields only, no command lines), only browser descendants of the audit node. Includes shared pages (shared, not unique).'
+      : 'RSS via /proc/<pid>/status VmRSS, only descendants of audit node with comm headless_shell/chrome/chromium. RSS includes shared pages (shared, not unique).',
   },
   tests: { A, B, C: { current: memCurrent, baseline: memBaseline }, D },
   unverifiedPhysicalDrivers: [

@@ -13,9 +13,10 @@ import net from 'node:net'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import process from 'node:process'
+import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-const projectRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const viteBin = path.join(projectRoot, 'node_modules', 'vite', 'bin', 'vite.js')
 const HOST = '127.0.0.1'
 const BG = [243, 241, 233, 255]

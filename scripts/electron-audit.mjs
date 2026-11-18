@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 // Dev-only Electron production UI audit lab: real Electron (playwright _electron),
 // production dist, sandboxed preload, device diagnostics, pen/palm/pinch input.
-// Not part of the app bundle. Run under Xvfb: xvfb-run -a node scripts/electron-audit.mjs
-// Staging app lives in /tmp with throwaway XDG_CONFIG_HOME: no real tokens/config/credentials.
+// Not part of the app bundle. On Linux, run under Xvfb when no display is available.
+// Staging app uses the OS temp directory and throwaway config/cache directories:
+// no real tokens/config/credentials.
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
+import { fileURLToPath } from 'node:url'
 import { _electron as electron } from 'playwright'
 
 const args = {}
@@ -22,8 +24,8 @@ if (!existsSync(path.join(distDir, 'index.html'))) {
   process.exit(2)
 }
 
-const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
-const EXECUTABLE = path.join(REPO, 'node_modules', 'electron', 'dist', 'electron')
+const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const EXECUTABLE = path.join(REPO, 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron')
 const DESKTOP_DIST = path.join(REPO, 'desktop', 'dist')
 if (!existsSync(EXECUTABLE) || !existsSync(path.join(DESKTOP_DIST, 'main.js')) || !existsSync(path.join(DESKTOP_DIST, 'preload.cjs'))) {
   console.error('electron binary or desktop/dist build missing — run npm run desktop:build first')
@@ -35,7 +37,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms))
 const shotsDir = path.join(path.dirname(outJson), 'screenshots')
 mkdirSync(shotsDir, { recursive: true })
 
-// ---- staging app in /tmp: production dist + desktop bundle + minimal package.json ----
+// ---- staging app in OS temp: production dist + desktop bundle + minimal package.json ----
 const staging = mkdtempSync(path.join(tmpdir(), 'trafaret-electron-audit-'))
 const xdgConfig = path.join(staging, 'xdg-config')
 const xdgCache = path.join(staging, 'xdg-cache')
@@ -138,7 +140,11 @@ async function runMode(mode, modeArgs) {
   const electronApp = await electron.launch({
     executablePath: EXECUTABLE,
     args: launchArgs,
-    env: { ...process.env, XDG_CONFIG_HOME: xdgConfig, XDG_CACHE_HOME: xdgCache },
+    env: {
+      ...process.env,
+      XDG_CONFIG_HOME: xdgConfig, XDG_CACHE_HOME: xdgCache,
+      APPDATA: xdgConfig, LOCALAPPDATA: xdgCache,
+    },
   })
   const result = {
     launchArgs,
@@ -312,7 +318,7 @@ const report = {
   limitations: [
     'Physical pen digitizer drivers (Wacom/WinTab/Windows Ink) and true pressure curve on physical hardware — NOT_TESTED (CDP-synthesized PointerEvent only)',
     'Physical multi-touch touchscreen pinch-to-zoom — NOT_TESTED (CDP dispatchTouchEvent synthesis only)',
-    'Real device GPUs (Intel/AMD/NVIDIA) and hardware rasterization — NOT_TESTED (Xvfb software rendering; --disable-gpu mode compared separately)',
+    'Real device GPUs (Intel/AMD/NVIDIA) and hardware rasterization — NOT_TESTED (headless/CI rendering; --disable-gpu mode compared separately)',
     'Device digitizer / touchscreen firmware — NOT_TESTED',
     'OS-level Chromium sandbox: depends on setuid chrome-sandbox helper in this environment; renderer webPreferences.sandbox verified separately in the main process',
   ],

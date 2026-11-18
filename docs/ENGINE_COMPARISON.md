@@ -42,10 +42,10 @@
 | `src/` (тесты) | 1365 |
 | `desktop/` (Electron) + тесты | 676 + 222 |
 | `android/` (Capacitor-обвязка) | 652 |
-| `scripts/` (регрессии, аудит, маркетинг) | 3617 |
+| `scripts/` (регрессии, аудит, маркетинг) | 3641 |
 | Зависимости | 9 prod / 22 dev |
 
-Метод подсчёта: логические строки (`splitlines`), включая последнюю строку без newline. `src/` — 34 файла `ts/tsx/css` без `*.test.*` (из них `ts/tsx` 6365 + CSS 464 = 6829); `android/` — только собственные файлы в `android/app/src/main` (ровно 14 `java/xml`, сгенерированные исключены); `desktop/` — только `desktop/src` (без `dist/` и тестов сборки).
+Метод подсчёта: логические строки (`splitlines`), включая последнюю строку без newline. `src/` — 34 файла `ts/tsx/css` без `*.test.*` (из них `ts/tsx` 6372 + CSS 464 = 6836); `android/` — только собственные файлы в `android/app/src/main` (ровно 14 `java/xml`, сгенерированные исключены); `desktop/` — только `desktop/src` (без `dist/` и тестов сборки).
 
 ## Объективно слабее
 
@@ -112,12 +112,15 @@
 
 - **PASS** — 101 тест / 13 тестовых файлов (`vitest`): 9 в `src/` + 4 в `desktop/`;
 - **PASS** — `lint`, `build`, `desktop:typecheck`;
-- **Не запускался** — собранный Electron binary (упаковка есть, интерактивный прогон не делали).
+- **PASS** — production regression 8/8, advanced regression 2/2, media regression 3/3;
+- **PASS** — StrictMode regression;
+- **PASS** — runtime A/B; Windows RSS и текущий memory-сценарий C выполнены, сравнение D не оценивалось без baseline;
+- **PASS** — реальный Electron в режимах default и disable-gpu: sandbox/security, 10 диагностик, pen/palm/pinch, без ошибок и внешних запросов.
 
 **NOT_TESTED** (не подтверждено ни одной проверкой, не заявлять как факты):
 - реальное железо ввода: Wacom, WinTab, Windows Ink;
 - GPU, дигитайзер, touch-сценарии;
-- Windows/Android устройства и установщики;
+- установщики Windows и реальные Android-устройства;
 - Drive credentials (реальная синхронизация с облаком);
 - печать (физический принтер);
 - head-to-head сравнение с CSP/Krita на одном железе.

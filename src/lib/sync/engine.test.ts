@@ -26,6 +26,8 @@ class MockDriveAdapter implements CloudStorageAdapter {
   calls = { ensureFolder: 0, find: 0, upload: 0, update: 0, download: 0 }
   private staleEtag = ''
   failNextUpdateWithStaleEtag = false
+  failNextUpdateWithError = false
+  failNextDownloadWithError = false
   /** Искусственная задержка download/update для имитации медленной сети. */
   downloadDelayMs = 0
   updateDelayMs = 0
@@ -60,6 +62,10 @@ class MockDriveAdapter implements CloudStorageAdapter {
   async updateProject(fileId: string, _projectId: string, json: string, ifMatchEtag: string | null): Promise<DriveFileInfo> {
     this.calls.update += 1
     if (this.updateDelayMs > 0) await new Promise(resolve => setTimeout(resolve, this.updateDelayMs))
+    if (this.failNextUpdateWithError) {
+      this.failNextUpdateWithError = false
+      throw new Error('update failed')
+    }
     const entry = this.files.get(fileId)
     if (!entry) throw new Error('Файл не найден')
     // Имитация гонки: etag у файла успел измениться между find и update.
@@ -77,6 +83,10 @@ class MockDriveAdapter implements CloudStorageAdapter {
   async downloadProject(fileId: string) {
     this.calls.download += 1
     if (this.downloadDelayMs > 0) await new Promise(resolve => setTimeout(resolve, this.downloadDelayMs))
+    if (this.failNextDownloadWithError) {
+      this.failNextDownloadWithError = false
+      throw new Error('download failed')
+    }
     const entry = this.files.get(fileId)
     if (!entry) throw new Error('Файл не найден')
     return { json: entry.json, info: { ...entry.info } }
@@ -242,6 +252,29 @@ describe('SyncEngine', () => {
     expect(adapter.remoteContent('file-1')).toBe(makeJson(3, 'local-edit'))
     expect(store.load(PROJECT_ID)?.lastSyncedLocalRevision).toBe(3)
     expect(adapter.calls.download).toBe(0)
+  })
+
+  it.each(['local', 'remote'] as const)('восстанавливает конфликт после ошибки разрешения: %s', async choice => {
+    const { adapter, engine, statuses } = makeEngine()
+    engine.updatePayload(makePayload(1))
+    await engine.syncNow()
+    adapter.simulateRemoteEdit('file-1', 2, 'remote-edit')
+    engine.updatePayload(makePayload(3, 'local-edit'))
+    await engine.syncNow()
+    const conflict = engine.getConflict()
+    if (!conflict) throw new Error('expected conflict')
+
+    if (choice === 'local') adapter.failNextUpdateWithError = true
+    else adapter.failNextDownloadWithError = true
+    const failed = await engine.resolveConflict(choice)
+
+    expect(failed).toEqual({ state: 'conflict', ...conflict })
+    expect(engine.getConflict()).toEqual(conflict)
+    expect(statuses.map(status => status.state)).toContain('error')
+
+    const resolved = await engine.resolveConflict(choice)
+    expect(resolved.state).toBe(choice === 'local' ? 'synced' : 'downloaded')
+    expect(engine.getConflict()).toBeNull()
   })
 
   it('при offline честно сообщает статус и повторяет sync после появления сети', async () => {

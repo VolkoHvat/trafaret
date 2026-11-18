@@ -190,6 +190,8 @@ export class SyncEngine {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       this.emit({ state: 'error', message })
+      this.conflict = conflict
+      this.emit({ state: 'conflict', ...conflict })
       return this.status
     } finally {
       this.finishRun()

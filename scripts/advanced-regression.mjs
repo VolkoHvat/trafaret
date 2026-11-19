@@ -1016,6 +1016,45 @@ async function s22PsdRoundtrip() {
   } finally { await context.close().catch(() => {}) }
 }
 
+function makeTestAbr() {
+  const u16 = value => { const b = Buffer.alloc(2); b.writeUInt16BE(value); return b }
+  const u32 = value => { const b = Buffer.alloc(4); b.writeUInt32BE(value); return b }
+  const double = value => { const b = Buffer.alloc(8); b.writeDoubleBE(value); return b }
+  const ascii = value => Buffer.from(value, 'ascii')
+  const unicode = value => { const b = Buffer.alloc(value.length * 2); for (let i = 0; i < value.length; i++) b[i * 2 + 1] = value.charCodeAt(i); return join(u32(value.length), b) }
+  const join = (...parts) => Buffer.concat(parts)
+  const id = value => join(u32(value.length), ascii(value))
+  const text = value => join(ascii('TEXT'), unicode(value))
+  const doub = value => join(ascii('doub'), double(value))
+  const field = (key, value) => join(id(key), value)
+  const descriptor = (name, classID, fields) => join(unicode(name), id(classID), u32(fields.length), ...fields)
+  const tip = descriptor('', 'sampledBrush', [
+    field('Nm  ', text('Test Liner')), field('Dmtr', doub(42)), field('Spcn', doub(15)),
+    field('Angl', doub(10)), field('Rndn', doub(80)), field('Hrdn', doub(90)),
+  ])
+  const preset = descriptor('', 'brushPreset', [field('Nm  ', text('Test Liner')), field('Brsh', join(ascii('Objc'), tip))])
+  const root = descriptor('', 'root', [field('Brsh', join(ascii('VlLs'), u32(1), ascii('Objc'), preset))])
+  return join(u16(6), u16(2), ascii('8BIM'), ascii('desc'), u32(4 + root.length), u32(16), root)
+}
+
+// ---------- Scenario 23: ABR preset import ----------
+async function s23AbrImport() {
+  const { context, page, trackers } = await freshContext()
+  try {
+    await page.click('header button:has-text("Экспорт")')
+    const chooserPromise = page.waitForEvent('filechooser')
+    await page.click('button.export-option:has-text("Импортировать ABR")')
+    const chooser = await chooserPromise
+    await chooser.setFiles({ name: 'test.abr', mimeType: 'application/octet-stream', buffer: makeTestAbr() })
+    await page.waitForSelector('.brush-preset.custom:has-text("Test Liner")', { timeout: 15000 })
+    await page.keyboard.press('Escape')
+    await page.click('.brush-preset.custom:has-text("Test Liner")')
+    const size = await page.locator('label.control-slider:has-text("Размер") input').inputValue()
+    const err = errorSummary(trackers)
+    return { status: size === '42' && err.clean ? 'PASS' : 'FAIL', evidence: { size, ...err } }
+  } finally { await context.close().catch(() => {}) }
+}
+
 // ---------- main ----------
 const started = Date.now()
 console.log(`[audit] production dist=${distDir}`)
@@ -1036,6 +1075,7 @@ const scenarios = [
   ['20-width-profile', 'Alt+wheel changes per-node width profile with Undo/Redo and SVG parity', s20WidthProfile],
   ['21-vector-groups', 'Shift multi-select moves, scales and rotates a vector group with exact Undo', s21VectorGroups],
   ['22-psd-roundtrip', 'Flattened PSD export/import preserves pixels and creates an image layer', s22PsdRoundtrip],
+  ['23-abr-import', 'ABR descriptor preset imports as a custom brush with correct size', s23AbrImport],
 ]
 
 const report = {

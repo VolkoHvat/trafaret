@@ -22,6 +22,7 @@ import { runEnvironmentDiagnostics, type DeviceDiagnosticsReport } from './lib/d
 import { BRUSH_ORDER, DEFAULT_BRUSHES } from './lib/brushes'
 import { blobToDataUrl, blobToImageData, makeVectorSvg, withGrayscale, withPngDpi } from './lib/output'
 import { readPsd, writePsd } from './lib/psd'
+import { abrToBrush, readAbr } from './lib/abr'
 import {
   createLayerMask, disposeLayerCanvases, downloadBlob, fileToDataURL, loadImage, makeCanvas,
   makePaintLayer, makeVectorLayer, redrawImageLayer, restoreProject,
@@ -110,6 +111,7 @@ export default function App() {
   const studioRef = useRef<StudioHandle>(null)
   const openProjectRef = useRef<HTMLInputElement>(null)
   const psdInputRef = useRef<HTMLInputElement>(null)
+  const abrInputRef = useRef<HTMLInputElement>(null)
   const activeLayer = layers.find(layer => layer.id === activeLayerId)
   const selectedObject = activeLayer?.objects?.find(object => object.id === selectedObjectId)
   const currentBrush = activeCustomIndex !== null && customPresets[activeCustomIndex]
@@ -465,6 +467,18 @@ export default function App() {
     }
   }
 
+  const importAbr = async (file: File) => {
+    try {
+      const imported = readAbr(new Uint8Array(await file.arrayBuffer())).map(abrToBrush)
+      setCustomPresets(current => [...current, ...imported.map(config => ({ name: config.name, config }))])
+      setActiveCustomIndex(customPresets.length)
+      setTool('brush')
+      showNotice(`Импортировано ABR-пресетов: ${imported.length}. Текстуры и dynamics не применяются`)
+    } catch {
+      showNotice('Не удалось импортировать ABR: поддерживаются только базовые brush presets')
+    }
+  }
+
   const openPrint = () => {
     setPrintWidthMm(doc.width / doc.dpi * 25.4)
     setPrintHeightMm(doc.height / doc.dpi * 25.4)
@@ -772,6 +786,11 @@ export default function App() {
         if (file) void importPsd(file)
         event.target.value = ''
       }} />
+      <input ref={abrInputRef} type="file" accept=".abr" hidden onChange={event => {
+        const file = event.target.files?.[0]
+        if (file) void importAbr(file)
+        event.target.value = ''
+      }} />
 
       <StudioDialog open={modal === 'new'} onOpenChange={open => !open && setModal(null)} title="Новый эскиз" description="Задайте разрешение и физический размер для линворка и печати.">
         <div className="form-stack">
@@ -800,6 +819,7 @@ export default function App() {
           <button className="export-option" disabled={exporting} onClick={exportSvg}><strong><FileCode2 size={16} />Векторный SVG</strong><span>Контуры, узлы, фигуры, цвет и трансформации</span></button>
           <button className="export-option" disabled={exporting} onClick={exportPsd}><strong><FileCode2 size={16} />PSD (плоское изображение)</strong><span>Composite для Photoshop, CSP и Krita</span></button>
           <button className="export-option" disabled={exporting} onClick={() => psdInputRef.current?.click()}><strong><FolderOpen size={16} />Импортировать PSD</strong><span>Flattened RGB/RGBA 8-bit, raw или RLE</span></button>
+          <button className="export-option" disabled={exporting} onClick={() => abrInputRef.current?.click()}><strong><Brush size={16} />Импортировать ABR</strong><span>Базовые brush presets, без текстур и dynamics</span></button>
           <button className="export-option" disabled={exporting} onClick={openPrint}><strong><Printer size={16} />Печать по размеру</strong><span>Миллиметры, цвет, оттенки серого или трафарет</span></button>
           <button className="export-option project-option" onClick={saveProject}><strong>Проект v2 со слоями</strong><span>Файл .tattoo.json: растр, векторы, маски, сканы и DPI</span></button>
         </div>

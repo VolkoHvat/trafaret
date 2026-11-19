@@ -17,7 +17,7 @@ const lockfile = JSON.parse(readFileSync(new URL('../../package-lock.json', impo
 describe('release metadata', () => {
   it('keeps npm, lockfile and the published Windows artifact aligned', () => {
     expect(packageJson.name).toBe('trafaret')
-    expect(packageJson.version).toBe('1.1.0')
+    expect(packageJson.version).toBe('1.2.0')
     expect(lockfile.name).toBe(packageJson.name)
     expect(lockfile.version).toBe(packageJson.version)
     expect(lockfile.packages['']).toMatchObject({

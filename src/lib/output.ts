@@ -1,4 +1,5 @@
 import type { DocModel, LayerModel } from '../types'
+import { writeIccProfile, type ColorProfile } from './icc'
 import { vectorObjectClipDefs, vectorObjectToSvg } from './vector'
 
 let crcTable: Uint32Array | undefined
@@ -30,6 +31,26 @@ export async function withPngDpi(blob: Blob, dpi: number) {
   chunk[16] = 1
   view.setUint32(17, crc32(chunk.subarray(4, 17)))
   return new Blob([source.subarray(0, 33), chunk, source.subarray(33)], { type: 'image/png' })
+}
+
+export async function withPngIccProfile(blob: Blob, profile: ColorProfile) {
+  const source = new Uint8Array(await blob.arrayBuffer())
+  if (source.length < 33 || source[0] !== 137 || source[1] !== 80) return blob
+  const icc = writeIccProfile(profile)
+  const name = profile === 'srgb' ? 'sRGB' : 'Display P3'
+  const data = new Uint8Array(1 + name.length + 1 + icc.length)
+  data.set([...asciiBytes(name), 0, 0, ...icc], 0)
+  const chunk = new Uint8Array(12 + data.length)
+  const view = new DataView(chunk.buffer)
+  view.setUint32(0, data.length)
+  chunk.set([105, 67, 67, 80], 4)
+  chunk.set(data, 8)
+  view.setUint32(8 + data.length, crc32(chunk.subarray(4, 8 + data.length)))
+  return new Blob([source.subarray(0, 33), chunk, source.subarray(33)], { type: 'image/png' })
+}
+
+function asciiBytes(value: string) {
+  return Array.from(value, character => character.charCodeAt(0))
 }
 
 function clampNumber(value: number, min: number, max: number) {

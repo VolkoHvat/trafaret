@@ -20,9 +20,10 @@ import { useCloudSync } from './hooks/useCloudSync'
 import type { ArtworkReport } from './lib/artwork-analysis'
 import { runEnvironmentDiagnostics, type DeviceDiagnosticsReport } from './lib/diagnostics'
 import { BRUSH_ORDER, DEFAULT_BRUSHES } from './lib/brushes'
-import { blobToDataUrl, blobToImageData, makeVectorSvg, withGrayscale, withPngDpi } from './lib/output'
+import { blobToDataUrl, blobToImageData, makeVectorSvg, withGrayscale, withPngDpi, withPngIccProfile } from './lib/output'
 import { readPsd, writePsd } from './lib/psd'
 import { abrToBrush, readAbr } from './lib/abr'
+import { convertToDisplayP3, type ColorProfile } from './lib/icc'
 import {
   createLayerMask, disposeLayerCanvases, downloadBlob, fileToDataURL, loadImage, makeCanvas,
   makePaintLayer, makeVectorLayer, redrawImageLayer, restoreProject,
@@ -107,6 +108,7 @@ export default function App() {
   const [printWidthMm, setPrintWidthMm] = useState(initialDoc.width / initialDoc.dpi * 25.4)
   const [printHeightMm, setPrintHeightMm] = useState(initialDoc.height / initialDoc.dpi * 25.4)
   const [printMode, setPrintMode] = useState<'color' | 'grayscale' | 'stencil'>('stencil')
+  const [colorProfile, setColorProfile] = useState<ColorProfile>('srgb')
   const [exporting, setExporting] = useState(false)
   const studioRef = useRef<StudioHandle>(null)
   const openProjectRef = useRef<HTMLInputElement>(null)
@@ -407,7 +409,14 @@ export default function App() {
     setExporting(true)
     try {
       const raw = await studioRef.current.exportImage(transparent, stencilMode, onlyActive)
-      const blob = await withPngDpi(raw, doc.dpi)
+      const profiled = colorProfile === 'display-p3'
+        ? await (async () => {
+            const { canvas, ctx, image } = await blobToImageData(raw)
+            ctx.putImageData(new ImageData(convertToDisplayP3(image.data), image.width, image.height), 0, 0)
+            return new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('PNG conversion failed')), 'image/png'))
+          })()
+        : raw
+      const blob = await withPngIccProfile(await withPngDpi(profiled, doc.dpi), colorProfile)
       const suffix = onlyActive ? '-active-layer' : stencilMode ? '-stencil' : transparent ? '-transparent' : ''
       downloadBlob(blob, `${safeFilename(doc.title)}${suffix}.png`)
       setModal(null)
@@ -812,6 +821,10 @@ export default function App() {
 
       <StudioDialog open={modal === 'export'} onOpenChange={open => !open && setModal(null)} title="Профессиональный экспорт" description="PNG получает DPI документа. SVG содержит редактируемые векторные контуры без сканов и направляющих.">
         <div className="export-list">
+          <label className="select-field"><span>Цветовой профиль</span><select value={colorProfile} onChange={event => setColorProfile(event.target.value as ColorProfile)}>
+            <option value="srgb">sRGB</option>
+            <option value="display-p3">Display P3</option>
+          </select></label>
           <button className="export-option" disabled={exporting} onClick={() => exportImage(false, false)}><strong>PNG с фоном</strong><span>Для показа клиенту и публикации · {doc.dpi} dpi</span></button>
           <button className="export-option" disabled={exporting} onClick={() => exportImage(true, false)}><strong>Прозрачный PNG</strong><span>Для макета и других редакторов · {doc.dpi} dpi</span></button>
           <button className="export-option" disabled={exporting} onClick={() => exportImage(true, false, true)}><strong>PNG активного слоя</strong><span>Чистая линия с учётом маски активного слоя</span></button>

@@ -1055,6 +1055,64 @@ async function s23AbrImport() {
   } finally { await context.close().catch(() => {}) }
 }
 
+function pngChunkTypes(bytes) {
+  const types = []
+  let offset = 8
+  while (offset + 12 <= bytes.length) {
+    const length = bytes.readUInt32BE(offset)
+    types.push(bytes.subarray(offset + 4, offset + 8).toString('ascii'))
+    offset += 12 + length
+  }
+  return types
+}
+
+// ---------- Scenario 24: ICC profiles in exported PNG ----------
+async function s24IccProfiles() {
+  const { context, page, trackers } = await freshContext()
+  try {
+    await page.click('button[aria-label="Цвет #7d1f2d"]')
+    const box = await canvasBox(page)
+    const start = docToClient(box, 500, 450)
+    const end = docToClient(box, 800, 450)
+    await page.mouse.move(start.x, start.y)
+    await page.mouse.down()
+    await page.mouse.move(end.x, end.y, { steps: 12 })
+    await page.mouse.up()
+    await sleep(350)
+
+    const exportPng = async (profile, target) => {
+      await page.click('header button:has-text("Экспорт")')
+      await page.selectOption('.dialog-content label.select-field:has-text("Цветовой профиль") select', profile)
+      await downloadTo(page, () => page.click('button.export-option:has-text("PNG с фоном")'), target)
+      await page.keyboard.press('Escape')
+    }
+    const srgbFile = '/tmp/trafaret-srgb.png'
+    const p3File = '/tmp/trafaret-p3.png'
+    await exportPng('srgb', srgbFile)
+    await exportPng('display-p3', p3File)
+    const srgb = await readFile(srgbFile)
+    const p3 = await readFile(p3File)
+    const srgbTypes = pngChunkTypes(srgb)
+    const p3Types = pngChunkTypes(p3)
+    const pixel = await page.evaluate(async path => {
+      const image = new Image()
+      image.src = path
+      await image.decode()
+      const canvas = document.createElement('canvas')
+      canvas.width = image.naturalWidth
+      canvas.height = image.naturalHeight
+      const ctx = canvas.getContext('2d', { willReadFrequently: true })
+      ctx.drawImage(image, 0, 0)
+      return Array.from(ctx.getImageData(650, 450, 1, 1).data)
+    }, `data:image/png;base64,${p3.toString('base64')}`)
+    const err = errorSummary(trackers)
+    const pass = srgbTypes.includes('iCCP') && p3Types.includes('iCCP')
+      && srgb.includes(Buffer.from('acsp')) && p3.includes(Buffer.from('acsp'))
+      && pixel[0] > pixel[1] && pixel[0] > pixel[2] && err.clean
+    return { status: pass ? 'PASS' : 'FAIL', evidence: { srgbTypes, p3Types, pixel, ...err } }
+  } finally { await context.close().catch(() => {}) }
+}
+
 // ---------- main ----------
 const started = Date.now()
 console.log(`[audit] production dist=${distDir}`)
@@ -1076,6 +1134,7 @@ const scenarios = [
   ['21-vector-groups', 'Shift multi-select moves, scales and rotates a vector group with exact Undo', s21VectorGroups],
   ['22-psd-roundtrip', 'Flattened PSD export/import preserves pixels and creates an image layer', s22PsdRoundtrip],
   ['23-abr-import', 'ABR descriptor preset imports as a custom brush with correct size', s23AbrImport],
+  ['24-icc-profiles', 'sRGB and Display P3 PNG exports include valid ICC metadata and converted pixels', s24IccProfiles],
 ]
 
 const report = {

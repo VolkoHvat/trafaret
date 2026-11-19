@@ -180,9 +180,9 @@ async function fillAt(page, box, docX, docY) {
   await sleep(300)
 }
 
-async function downloadTo(page, trigger, target) {
+async function downloadTo(page, trigger, target, timeoutMs = 15000) {
   const [download] = await Promise.all([
-    page.waitForEvent('download', { timeout: 15000 }),
+    page.waitForEvent('download', { timeout: timeoutMs }),
     trigger(),
   ])
   await download.saveAs(target)
@@ -976,6 +976,46 @@ async function s21VectorGroups() {
   } finally { await context.close().catch(() => {}) }
 }
 
+// ---------- Scenario 22: flattened PSD export/import roundtrip ----------
+async function s22PsdRoundtrip() {
+  const { context, page, trackers } = await freshContext()
+  try {
+    const box = await canvasBox(page)
+    const start = docToClient(box, 500, 500)
+    const end = docToClient(box, 800, 500)
+    await page.mouse.move(start.x, start.y)
+    await page.mouse.down()
+    await page.mouse.move(end.x, end.y, { steps: 12 })
+    await page.mouse.up()
+    await sleep(350)
+    const sampleBefore = await sampleGrid(page)
+    const psdFile = '/tmp/trafaret-roundtrip.psd'
+    await page.click('header button:has-text("Экспорт")')
+    await downloadTo(page, () => page.click('button.export-option:has-text("PSD (плоское изображение)")'), psdFile, 60000)
+    const bytes = await readFile(psdFile)
+    const signature = bytes.subarray(0, 4).toString('ascii')
+
+    await page.keyboard.press('Escape')
+    await page.click('header button:has-text("Экспорт")')
+    const chooserPromise = page.waitForEvent('filechooser')
+    await page.click('button.export-option:has-text("Импортировать PSD")')
+    const chooser = await chooserPromise
+    await chooser.setFiles(psdFile)
+    await sleep(700)
+    const sampleAfter = await sampleGrid(page)
+    await page.keyboard.press('Escape')
+    const projectFile = '/tmp/trafaret-psd-import.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), projectFile)
+    const project = JSON.parse(await readFile(projectFile, 'utf8'))
+    const importedLayer = project.layers.find(layer => layer.kind === 'image' && layer.name.startsWith('PSD ·'))
+    const err = errorSummary(trackers)
+    return {
+      status: signature === '8BPS' && importedLayer && exactEqual(sampleAfter, sampleBefore) && err.clean ? 'PASS' : 'FAIL',
+      evidence: { signature, importedLayer: Boolean(importedLayer), pixelsExact: exactEqual(sampleAfter, sampleBefore), ...err },
+    }
+  } finally { await context.close().catch(() => {}) }
+}
+
 // ---------- main ----------
 const started = Date.now()
 console.log(`[audit] production dist=${distDir}`)
@@ -995,6 +1035,7 @@ const scenarios = [
   ['19-path-segments', 'Alt+click inserts a path node and double-click deletes it with exact Undo', s19PathSegments],
   ['20-width-profile', 'Alt+wheel changes per-node width profile with Undo/Redo and SVG parity', s20WidthProfile],
   ['21-vector-groups', 'Shift multi-select moves, scales and rotates a vector group with exact Undo', s21VectorGroups],
+  ['22-psd-roundtrip', 'Flattened PSD export/import preserves pixels and creates an image layer', s22PsdRoundtrip],
 ]
 
 const report = {

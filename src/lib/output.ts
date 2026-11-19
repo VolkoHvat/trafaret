@@ -52,7 +52,7 @@ export function makeVectorSvg(doc: DocModel, layers: LayerModel[]) {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${widthMm}mm" height="${heightMm}mm" viewBox="0 0 ${doc.width} ${doc.height}">\n<title>${escapeXml(doc.title)}</title>\n${defs ? `<defs>\n${defs}\n</defs>\n` : ''}${groups.join('\n')}\n</svg>`
 }
 
-export async function withGrayscale(blob: Blob): Promise<Blob> {
+export async function blobToImageData(blob: Blob) {
   const bitmap = await createImageBitmap(blob)
   const canvas = document.createElement('canvas')
   canvas.width = bitmap.width
@@ -60,7 +60,11 @@ export async function withGrayscale(blob: Blob): Promise<Blob> {
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!
   ctx.drawImage(bitmap, 0, 0)
   bitmap.close()
-  const image = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  return { canvas, ctx, image: ctx.getImageData(0, 0, canvas.width, canvas.height) }
+}
+
+export async function withGrayscale(blob: Blob): Promise<Blob> {
+  const { canvas, ctx, image } = await blobToImageData(blob)
   for (let i = 0; i < image.data.length; i += 4) {
     const gray = image.data[i] * 0.2126 + image.data[i + 1] * 0.7152 + image.data[i + 2] * 0.0722
     image.data[i] = gray

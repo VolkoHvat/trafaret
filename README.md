@@ -23,7 +23,7 @@
 | **Android** | [Trafaret-Android.apk](https://github.com/VolkoHvat/trafaret/releases/latest/download/Trafaret-Android.apk) | Android 7.0+ (minSdk 24) |
 | **Исходники** | [github.com/VolkoHvat/trafaret](https://github.com/VolkoHvat/trafaret) | Все платформы |
 
-Последний выпуск: [v1.0](https://github.com/VolkoHvat/trafaret/releases/latest). Хеши и детали — в [Release Notes](docs/RELEASE_NOTES.md).
+Последний выпуск: [v1.3.0](https://github.com/VolkoHvat/trafaret/releases/latest). Хеши и детали — в [Release Notes](docs/RELEASE_NOTES_V1_3.md).
 
 ## Функционал
 
@@ -168,7 +168,7 @@ npm run android:apk
 
 ## Документы
 
-- [Release Notes v1.0](docs/RELEASE_NOTES.md) — файлы выпуска, размеры, SHA-256.
+- [Release Notes v1.3.0](docs/RELEASE_NOTES_V1_3.md) — файлы выпуска, размеры, SHA-256.
 - [Маркетинговый пакет](docs/MARKETING.md) — позиционирование и тексты команды «Кир».
 - [Сайт проекта](docs/index.html) — статическая страница для GitHub Pages ([публичная версия](https://volkohvat.github.io/trafaret/)).
 

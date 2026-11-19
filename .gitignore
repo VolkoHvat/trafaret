@@ -24,6 +24,7 @@ dist-ssr
 *.sw?
 
 # Secrets and credentials — never publish (example files stay tracked)
+.secrets/
 .env
 .env.*
 !.env.example

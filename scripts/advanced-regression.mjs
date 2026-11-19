@@ -1305,6 +1305,66 @@ async function s28LayerRename() {
   } finally { await context.close().catch(() => {}) }
 }
 
+// ---------- Scenario 29: group deletion + exact Undo/Redo ----------
+async function s29VectorGroupDelete() {
+  const { context, page, trackers } = await freshContext()
+  try {
+    const box = await canvasBox(page)
+    await page.keyboard.press('p')
+    await sleep(250)
+    for (const [x, y] of [[500, 500], [650, 500], [500, 700], [650, 700]]) {
+      const point = docToClient(box, x, y)
+      await page.mouse.click(point.x, point.y)
+      await sleep(100)
+      if (x === 650 && y === 500) {
+        await page.keyboard.press('Enter')
+        await sleep(250)
+      }
+    }
+    await page.keyboard.press('Enter')
+    await sleep(350)
+    const beforeFile = '/tmp/trafaret-group-delete-before.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), beforeFile)
+    const beforeJson = JSON.parse(await readFile(beforeFile, 'utf8'))
+    const beforeObjects = beforeJson.layers.find(layer => layer.kind === 'vector')?.objects ?? []
+    if (beforeObjects.length !== 2) throw new Error('expected two source vector objects')
+
+    await page.keyboard.press('v')
+    await sleep(200)
+    const first = docToClient(box, 575, 500)
+    await page.mouse.click(first.x, first.y)
+    const second = docToClient(box, 575, 700)
+    await page.keyboard.down('Shift')
+    await page.mouse.click(second.x, second.y)
+    await page.keyboard.up('Shift')
+    await page.keyboard.press('Delete')
+    await sleep(350)
+    const deletedFile = '/tmp/trafaret-group-delete-after.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), deletedFile)
+    const deletedJson = JSON.parse(await readFile(deletedFile, 'utf8'))
+    const deletedObjects = deletedJson.layers.find(layer => layer.kind === 'vector')?.objects ?? []
+
+    await page.keyboard.press('Control+z')
+    await sleep(350)
+    const undoFile = '/tmp/trafaret-group-delete-undo.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), undoFile)
+    const undoJson = JSON.parse(await readFile(undoFile, 'utf8'))
+    const undoObjects = undoJson.layers.find(layer => layer.kind === 'vector')?.objects ?? []
+    const undoExact = JSON.stringify(undoObjects) === JSON.stringify(beforeObjects)
+
+    await page.keyboard.press('Control+Shift+z')
+    await sleep(350)
+    const redoFile = '/tmp/trafaret-group-delete-redo.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), redoFile)
+    const redoJson = JSON.parse(await readFile(redoFile, 'utf8'))
+    const redoObjects = redoJson.layers.find(layer => layer.kind === 'vector')?.objects ?? []
+    const err = errorSummary(trackers)
+    const pass = deletedObjects.length === 0 && undoExact && redoObjects.length === 0 && err.clean
+    return { status: pass ? 'PASS' : 'FAIL', evidence: { beforeCount: beforeObjects.length,
+      deletedCount: deletedObjects.length, undoExact, redoCount: redoObjects.length, ...err } }
+  } finally { await context.close().catch(() => {}) }
+}
+
 // ---------- main ----------
 const started = Date.now()
 console.log(`[audit] production dist=${distDir}`)
@@ -1331,6 +1391,7 @@ const scenarios = [
   ['26-path-simplify', 'RDP simplifies 30 collinear pen nodes to two endpoints with exact Undo/Redo', s26PathSimplify],
   ['27-vector-duplication', 'Selected vector duplication uses fresh ids, a 20px offset and exact Undo/Redo; layer copies also renew ids', s27VectorDuplication],
   ['28-layer-rename', 'Layer name trims on blur and persists in the project and after a clean reload', s28LayerRename],
+  ['29-vector-group-delete', 'Delete removes the whole Shift-selected vector group with exact Undo/Redo', s29VectorGroupDelete],
 ]
 
 const report = {

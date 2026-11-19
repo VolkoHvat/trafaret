@@ -484,11 +484,12 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
   }, [pushHistory, pushObjectHistory, scheduleRender])
 
   const deleteSelectedObject = useCallback(() => {
-    const { layers, activeLayerId, selectedObjectId } = propsRef.current
+    const { layers, activeLayerId, selectedObjectId, selectedObjectIds } = propsRef.current
     const layer = layers.find(item => item.id === activeLayerId)
-    if (!layer || layer.kind !== 'vector' || layer.locked || !selectedObjectId) return
+    const ids = selectedObjectIds?.length ? selectedObjectIds : selectedObjectId ? [selectedObjectId] : []
+    if (!layer || layer.kind !== 'vector' || layer.locked || !ids.length) return
     const before = cloneObjects(layer.objects)
-    const after = before.filter(object => object.id !== selectedObjectId)
+    const after = before.filter(object => !ids.includes(object.id))
     if (after.length === before.length) return
     pushObjectHistory(layer, before, after)
     propsRef.current.onSelectObject(null)

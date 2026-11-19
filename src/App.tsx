@@ -741,6 +741,8 @@ export default function App() {
               color={color} onColor={setColor} stylusOnly={stylusOnly} onStylusOnly={setStylusOnly}
               selectedObjectSize={selectedObject?.brush.size ?? null}
               onObjectSize={size => studioRef.current?.setSelectedObjectSize(size)}
+              onSimplify={selectedObject && selectedObject.kind !== 'shape' && selectedObject.points.length >= 3
+                ? () => studioRef.current?.simplifySelectedPath() : undefined}
             />
             <DocumentPanel
               symmetry={symmetry} radialCount={radialCount} guide={guide} shapeKind={shapeKind}

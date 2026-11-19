@@ -15,7 +15,7 @@ import { copyPoints, StrokeSession, symmetricObjects } from '../lib/stroke-sessi
 import {
   adjustWidthProfile, defaultVectorTransform, ensureObjectOrigin, insertControlPoint, moveControlHandle, moveControlPoint,
   nearestControlHandle, nearestControlPoint, objectBounds, objectOrigin, removeControlPoint,
-  supportsControlPoints, transformVectorGroup, unionBounds, worldPoint,
+  simplifyVectorPath, supportsControlPoints, transformVectorGroup, unionBounds, worldPoint,
 } from '../lib/geometry'
 import {
   cloneObjects, hitVectorObject, renderVectorLayer, renderVectorObject, vectorId,
@@ -27,6 +27,7 @@ export interface StudioHandle {
   clearActive: () => void
   deleteSelectedObject: () => void
   setSelectedObjectSize: (size: number) => void
+  simplifySelectedPath: (epsilon?: number) => void
   commitPen: (closed?: boolean) => void
   addPath: (points: StrokePoint[], closed: boolean, color: string, brush?: Partial<BrushConfig>) => boolean
   cancelDraft: () => void
@@ -510,6 +511,20 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     scheduleRender()
   }, [pushObjectHistory, scheduleRender])
 
+  const simplifySelectedPath = useCallback((epsilon = 2) => {
+    const { layers, activeLayerId, selectedObjectId } = propsRef.current
+    const layer = layers.find(item => item.id === activeLayerId)
+    const selected = layer?.objects?.find(object => object.id === selectedObjectId)
+    if (!layer || layer.locked || !selected || selected.points.length < 3) return
+    const before = cloneObjects(layer.objects)
+    const after = cloneObjects(before)
+    const result = simplifyVectorPath(after.find(object => object.id === selected.id)!, epsilon)
+    if (result.before === result.after) return
+    pushObjectHistory(layer, before, after)
+    propsRef.current.onMutated()
+    scheduleRender()
+  }, [pushObjectHistory, scheduleRender])
+
   const commitPen = useCallback((closed = false) => {
     const points = penDraftRef.current
     const { layers, activeLayerId, brush, color, doc, symmetry, radialCount, selection } = propsRef.current
@@ -563,6 +578,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     clearActive,
     deleteSelectedObject,
     setSelectedObjectSize,
+    simplifySelectedPath,
     commitPen,
     addPath,
     cancelDraft: () => {
@@ -637,7 +653,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       return analyzeArtwork(doc, artworkLayers, image)
     },
     historyPixels: () => historyRef.current.size,
-  }), [addPath, clearActive, commitPen, composeTo, deleteSelectedObject, releaseBuffer, restoreHistory, scheduleRender, setSelectedObjectSize, updateHistoryState])
+  }), [addPath, clearActive, commitPen, composeTo, deleteSelectedObject, releaseBuffer, restoreHistory, scheduleRender, setSelectedObjectSize, simplifySelectedPath, updateHistoryState])
 
   const clientToDoc = useCallback((clientX: number, clientY: number): StrokePoint => {
     const canvas = canvasRef.current!

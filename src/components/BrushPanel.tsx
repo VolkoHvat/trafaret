@@ -8,7 +8,7 @@ const PALETTE = ['#171914', '#f2f0e7', '#7d1f2d', '#1f4e46', '#314c76', '#a36938
 export function BrushPanel({
   brushes, activeId, customPresets, activeCustomIndex, onSelect, onSelectCustom,
   onSavePreset, onDeletePreset, onUpdate, color, onColor, stylusOnly, onStylusOnly,
-  selectedObjectSize, onObjectSize,
+  selectedObjectSize, onObjectSize, onSimplify,
 }: {
   brushes: Record<BrushId, BrushConfig>
   activeId: BrushId
@@ -25,6 +25,7 @@ export function BrushPanel({
   onStylusOnly: (value: boolean) => void
   selectedObjectSize: number | null
   onObjectSize: (size: number) => void
+  onSimplify?: () => void
 }) {
   const brush = activeCustomIndex !== null && customPresets[activeCustomIndex]
     ? customPresets[activeCustomIndex].config
@@ -63,6 +64,7 @@ export function BrushPanel({
           <div className="group-title"><Spline size={14} /><span>Выбранный объект</span></div>
           <Slider label="Толщина объекта" min={1} max={120} value={selectedObjectSize} unit=" px" onChange={onObjectSize} />
           <p className="control-hint">Меняется только выбранная векторная линия, не кисть.</p>
+          {onSimplify && <button className="secondary-button full-width" onClick={onSimplify}><Spline size={15} />Упростить контур · 2 px</button>}
         </div>
       )}
 

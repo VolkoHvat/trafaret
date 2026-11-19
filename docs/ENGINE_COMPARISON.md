@@ -1,6 +1,6 @@
 # Трафарет, CSP и Krita: сравнение движков
 
-Дата: 2026-11-18
+Дата: 2026-11-18; обновлено 2026-11-19
 
 ## О границах сравнения
 
@@ -24,13 +24,13 @@
 | Scan / stencil (extract lines) | ✔ | ✔ (официально заявлено) | н/д |
 | Composition/detail analysis (tattoo) | ✔ (специфический) | н/д / аналог не заявляем | без заявления аналогичного |
 | Экспорт PNG (DPI) / SVG | ✔ | ✔ | ✔ |
-| Цветовые профили | — | ✔ | ICC / OCIO |
-| Восстановление (recovery) | — | ✔ | н/д / аналог не заявляем |
+| Цветовые профили | sRGB / Display P3 (`iCCP`) | ✔ | ICC / OCIO |
+| Восстановление (recovery) | ✔ (аварийная копия по выбору пользователя) | ✔ | н/д / аналог не заявляем |
 | Рендер-API | Canvas2D | н/д / аналог не заявляем | OpenGL / D3D11 |
 | Работа offline | ✔ | ✔ | ✔ |
 | Drive conflict UI | ✔ | н/д / аналог не заявляем | н/д / аналог не заявляем |
 | Платформы | Windows / Android | Windows / macOS / iPad / Android | Windows / macOS / Linux / Android |
-| Plugin API | Нет | публичный API не заявляем | Python |
+| Plugin API | Декларативные JSON-манифесты | публичный API не заявляем | Python |
 
 ## Метрики кодовой базы
 
@@ -95,6 +95,7 @@
 - множественный выбор и групповые трансформации — **реализовано**: Shift+click, общий bounding box, move/scale/rotate всей группы с одной Undo-записью;
 - vector control points — **реализовано**: опорные точки pen-path и freehand vector-штрихов редактируются после отрисовки, включая transformed objects, выбор ближайшего узла и точное Undo;
 - line width redraw — **реализовано**: слайдер меняет толщину только выбранного векторного объекта, сохраняет глобальную кисть и поддерживает Undo/Redo;
+- RDP simplification — **реализовано**: опорные точки упрощаются с допуском 2 px, концы и давление сохраняются, ручки и профиль толщины оставшихся узлов перенумеровываются, Undo/Redo восстанавливает объект точно;
 - brush presets — пользовательские пресеты кистей вместо фиксированных 7 BrushId;
 - recovery / autosave — **реализовано**: маркер незавершённой сессии, диалог восстановления после сбоя и защита аварийной копии от перезаписи до выбора пользователя;
 - predicted stroke — **реализовано**: короткое экстраполирование до 32 px только в preview, без попадания предсказанных точек в commit или историю;
@@ -113,11 +114,11 @@
 
 ## Проверки
 
-Актуальный статус на 2026-11-18 (Node 22):
+Актуальный статус на 2026-11-19 (Node 22):
 
-- **PASS** — 134 теста / 22 тестовых файла (`vitest`): 18 в `src/` + 4 в `desktop/`;
+- **PASS** — 136 тестов / 22 тестовых файла (`vitest`): 18 в `src/` + 4 в `desktop/`;
 - **PASS** — `lint`, `build`, `desktop:typecheck`;
-- **PASS** — production regression 8/8, advanced regression 15/15, media regression 3/3;
+- **PASS** — production regression 8/8, advanced regression 16/16, media regression 3/3;
 - **PASS** — StrictMode regression;
 - **PASS** — runtime A/B; Windows RSS и текущий memory-сценарий C выполнены, сравнение D не оценивалось без baseline;
 - **PASS** — paired stroke latency E (63 образца): p50 28,60 → 28,20 мс, p95 33,80 → 32,50 мс; canvas после commit идентичен baseline;

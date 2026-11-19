@@ -226,6 +226,47 @@ export function removeControlPoint(object: VectorObject, index: number): boolean
   return true
 }
 
+function perpendicularDistance(point: GeometryPoint, start: GeometryPoint, end: GeometryPoint) {
+  const dx = end[0] - start[0], dy = end[1] - start[1]
+  const length = Math.hypot(dx, dy)
+  return length ? Math.abs(dy * point[0] - dx * point[1] + end[0] * start[1] - end[1] * start[0]) / length
+    : Math.hypot(point[0] - start[0], point[1] - start[1])
+}
+
+export function simplifyVectorPath(object: VectorObject, epsilon: number): { before: number; after: number } {
+  if (!supportsControlPoints(object) || object.points.length < 3 || !(epsilon > 0)) {
+    return { before: object.points.length, after: object.points.length }
+  }
+  const source = object.points
+  const keep = new Uint8Array(source.length)
+  keep[0] = 1
+  keep[source.length - 1] = 1
+  const stack: [number, number][] = [[0, source.length - 1]]
+  while (stack.length) {
+    const [start, end] = stack.pop()!
+    let farthest = -1, maxDistance = epsilon
+    for (let index = start + 1; index < end; index++) {
+      const distance = perpendicularDistance(source[index], source[start], source[end])
+      if (distance > maxDistance) { farthest = index; maxDistance = distance }
+    }
+    if (farthest >= 0) {
+      keep[farthest] = 1
+      stack.push([start, farthest], [farthest, end])
+    }
+  }
+  const indices = source.map((_, index) => index).filter(index => keep[index])
+  const handles: VectorObject['handles'] = {}
+  const widths: Record<number, number> = {}
+  indices.forEach((oldIndex, newIndex) => {
+    if (object.handles?.[oldIndex]) handles[newIndex] = object.handles[oldIndex]
+    if (object.widthProfile?.[oldIndex] !== undefined) widths[newIndex] = object.widthProfile[oldIndex]
+  })
+  object.points = indices.map(index => [...source[index]] as VectorObject['points'][number])
+  object.handles = handles
+  object.widthProfile = widths
+  return { before: source.length, after: object.points.length }
+}
+
 export function adjustWidthProfile(object: VectorObject, index: number, delta: number): number | undefined {
   if (!supportsControlPoints(object) || !object.points[index]) return undefined
   const current = object.widthProfile?.[index] ?? 1

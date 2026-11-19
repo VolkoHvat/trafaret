@@ -1147,6 +1147,64 @@ async function s25PluginApi() {
   } finally { await context.close().catch(() => {}) }
 }
 
+// ---------- Scenario 26: RDP path simplification + exact Undo/Redo ----------
+async function s26PathSimplify() {
+  const { context, page, trackers } = await freshContext()
+  try {
+    const box = await canvasBox(page)
+    await page.keyboard.press('p')
+    await sleep(250)
+    for (let index = 0; index < 30; index++) {
+      const point = docToClient(box, 350 + index * 20, 500)
+      await page.mouse.click(point.x, point.y)
+      await sleep(60)
+    }
+    await page.keyboard.press('Enter')
+    await sleep(350)
+    const beforeFile = '/tmp/trafaret-simplify-before.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), beforeFile)
+    const beforeJson = JSON.parse(await readFile(beforeFile, 'utf8'))
+    const beforePath = beforeJson.layers.find(layer => layer.kind === 'vector')?.objects?.find(object => object.kind === 'path')
+    if (beforePath?.points?.length !== 30) throw new Error(`expected 30 path points, got ${beforePath?.points?.length}`)
+    const sampleBefore = await sampleGrid(page)
+
+    await page.click('button:has-text("Упростить контур")')
+    await sleep(350)
+    const afterFile = '/tmp/trafaret-simplify-after.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), afterFile)
+    const afterJson = JSON.parse(await readFile(afterFile, 'utf8'))
+    const afterPath = afterJson.layers.find(layer => layer.kind === 'vector')?.objects?.find(object => object.id === beforePath.id)
+
+    await page.keyboard.press('Control+z')
+    await sleep(350)
+    const sampleUndone = await sampleGrid(page)
+    const undoFile = '/tmp/trafaret-simplify-undo.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), undoFile)
+    const undoJson = JSON.parse(await readFile(undoFile, 'utf8'))
+    const undoPath = undoJson.layers.find(layer => layer.kind === 'vector')?.objects?.find(object => object.id === beforePath.id)
+
+    await page.keyboard.press('Control+Shift+z')
+    await sleep(350)
+    const redoFile = '/tmp/trafaret-simplify-redo.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), redoFile)
+    const redoJson = JSON.parse(await readFile(redoFile, 'utf8'))
+    const redoPath = redoJson.layers.find(layer => layer.kind === 'vector')?.objects?.find(object => object.id === beforePath.id)
+    await page.screenshot({ path: path.join(shotsDir, '26-path-simplify.png') })
+
+    const endpointsPreserved = JSON.stringify(afterPath?.points) === JSON.stringify([beforePath.points[0], beforePath.points.at(-1)])
+    const undoExact = JSON.stringify(undoPath) === JSON.stringify(beforePath)
+    const redoExact = JSON.stringify(redoPath) === JSON.stringify(afterPath)
+    const undoPixelsExact = exactEqual(sampleUndone, sampleBefore)
+    const err = errorSummary(trackers)
+    const pass = afterPath?.points?.length === 2 && endpointsPreserved && undoExact && redoExact && undoPixelsExact && err.clean
+    return {
+      status: pass ? 'PASS' : 'FAIL',
+      evidence: { beforeCount: beforePath.points.length, afterCount: afterPath?.points?.length,
+        endpointsPreserved, undoExact, redoExact, undoPixelsExact, ...err },
+    }
+  } finally { await context.close().catch(() => {}) }
+}
+
 // ---------- main ----------
 const started = Date.now()
 console.log(`[audit] production dist=${distDir}`)
@@ -1170,6 +1228,7 @@ const scenarios = [
   ['23-abr-import', 'ABR descriptor preset imports as a custom brush with correct size', s23AbrImport],
   ['24-icc-profiles', 'sRGB and Display P3 PNG exports include valid ICC metadata and converted pixels', s24IccProfiles],
   ['25-plugin-api', 'Declarative plugin applies brush, symmetry and a mirrored path without executing code', s25PluginApi],
+  ['26-path-simplify', 'RDP simplifies 30 collinear pen nodes to two endpoints with exact Undo/Redo', s26PathSimplify],
 ]
 
 const report = {

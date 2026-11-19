@@ -3,7 +3,7 @@ import type { VectorObject } from '../types'
 import {
   adjustWidthProfile, applyObjectTransform, baseObjectBounds, insertControlPoint, localPoint, moveControlHandle, moveControlPoint,
   nearestControlHandle, nearestControlPoint, objectOrigin, objectSvgTransform, removeControlPoint, shapePath,
-  shapeSvgPath, supportsControlPoints, transformVectorGroup, unionBounds, vectorPath, vectorSvgPath, worldPoint,
+  shapeSvgPath, simplifyVectorPath, supportsControlPoints, transformVectorGroup, unionBounds, vectorPath, vectorSvgPath, worldPoint,
 } from './geometry'
 import { renderVectorObject, vectorObjectToSvg } from './vector'
 
@@ -166,6 +166,32 @@ describe('path segments', () => {
     expect(removeControlPoint(object, 1)).toBe(true)
     expect(object.points).toHaveLength(2)
     expect(removeControlPoint(object, 0)).toBe(false)
+  })
+})
+
+describe('path simplification', () => {
+  it('reduces collinear points to the original endpoints', () => {
+    const object = arcObject()
+    object.kind = 'path'
+    object.shape = undefined
+    object.points = Array.from({ length: 30 }, (_, index) => [100 + index * 10, 200, index / 29])
+
+    expect(simplifyVectorPath(object, 2)).toEqual({ before: 30, after: 2 })
+    expect(object.points).toEqual([[100, 200, 0], [390, 200, 1]])
+  })
+
+  it('remaps retained handles and width multipliers', () => {
+    const object = arcObject()
+    object.kind = 'path'
+    object.shape = undefined
+    object.points = [[0, 0, 0.1], [10, 0, 0.2], [20, 0, 0.3], [30, 10, 0.4], [40, 10, 0.5], [50, 10, 0.6]]
+    object.handles = { 1: { out: [15, 5] }, 2: { in: [15, -5], out: [25, -5] }, 4: { in: [35, 5] } }
+    object.widthProfile = { 0: 1, 1: 1.5, 2: 2, 4: 3, 5: 4 }
+
+    expect(simplifyVectorPath(object, 2)).toEqual({ before: 6, after: 4 })
+    expect(object.points).toEqual([[0, 0, 0.1], [20, 0, 0.3], [30, 10, 0.4], [50, 10, 0.6]])
+    expect(object.handles).toEqual({ 1: { in: [15, -5], out: [25, -5] } })
+    expect(object.widthProfile).toEqual({ 0: 1, 1: 2, 3: 4 })
   })
 })
 

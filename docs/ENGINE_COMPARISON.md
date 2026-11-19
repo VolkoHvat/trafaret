@@ -119,7 +119,7 @@
 
 - **PASS** — 138 тестов / 23 тестовых файла (`vitest`): 19 в `src/` + 4 в `desktop/`;
 - **PASS** — `lint`, `build`, `desktop:typecheck`;
-- **PASS** — production regression 8/8, advanced regression 16/16, media regression 3/3;
+- **PASS** — production regression 8/8, advanced regression 19/19, media regression 3/3;
 - **PASS** — StrictMode regression;
 - **PASS** — runtime A/B; Windows RSS и текущий memory-сценарий C выполнены, сравнение D не оценивалось без baseline;
 - **PASS** — paired stroke latency E (63 образца): p50 28,60 → 28,20 мс, p95 33,80 → 32,50 мс; canvas после commit идентичен baseline;

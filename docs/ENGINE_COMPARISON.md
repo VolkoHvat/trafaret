@@ -38,14 +38,14 @@
 
 | Область | LOC |
 |---|---|
-| `src/` (приложение) | 7893 |
-| `src/` (тесты) | 2013 |
+| `src/` (приложение) | 8038 |
+| `src/` (тесты) | 2046 |
 | `desktop/` (Electron) + тесты | 676 + 222 |
 | `android/` (Capacitor-обвязка) | 652 |
-| `scripts/` (регрессии, аудит, маркетинг) | 4454 |
+| `scripts/` (регрессии, аудит, маркетинг) | 4513 |
 | Зависимости | 9 prod / 22 dev |
 
-Метод подсчёта: логические строки (`splitlines`), включая последнюю строку без newline. `src/` — 41 файл `ts/tsx/css` без `*.test.*` (из них `ts/tsx` 7429 + CSS 464 = 7893); `android/` — только собственные файлы в `android/app/src/main` (ровно 14 `java/xml`, сгенерированные исключены); `desktop/` — только `desktop/src` (без `dist/` и тестов сборки).
+Метод подсчёта: логические строки (`splitlines`), включая последнюю строку без newline. `src/` — 42 файла `ts/tsx/css` без `*.test.*` (из них `ts/tsx` 7574 + CSS 464 = 8038); `android/` — только собственные файлы в `android/app/src/main` (ровно 14 `java/xml`, сгенерированные исключены); `desktop/` — только `desktop/src` (без `dist/` и тестов сборки).
 
 ## Объективно слабее
 
@@ -105,7 +105,7 @@
 - PSD — **реализован ограниченный вариант**: flattened RGB/RGBA 8-bit, raw и RLE; слои, маски и эффекты PSD не заявляются;
 - ABR — **реализован ограниченный вариант**: базовые descriptor-пресеты с именем, diameter, spacing, angle, roundness, hardness и minimum diameter; bitmap tips, textures и dynamics не поддерживаются;
 - plugin API — расширяемость (Python у Krita; публичный API у CSP не заявляем);
-- ICC — полноценный цветоменеджмент; сейчас у нас DPI/физический размер экспорта без полного ICC (простой CMYK-конверсии нет).
+- ICC — **реализован ограниченный pipeline**: валидный `iCCP` профиль sRGB или Display P3, включая преобразование пикселей в P3; произвольные ICC-профили и полный color management не заявляются.
 
 **Не нужно сейчас**: анимация, 3D, комиксы, многостраничные документы — это охват CSP/Krita вне нашей ниши.
 
@@ -115,9 +115,9 @@
 
 Актуальный статус на 2026-11-18 (Node 22):
 
-- **PASS** — 130 тестов / 20 тестовых файлов (`vitest`): 16 в `src/` + 4 в `desktop/`;
+- **PASS** — 132 теста / 21 тестовый файл (`vitest`): 17 в `src/` + 4 в `desktop/`;
 - **PASS** — `lint`, `build`, `desktop:typecheck`;
-- **PASS** — production regression 8/8, advanced regression 13/13, media regression 3/3;
+- **PASS** — production regression 8/8, advanced regression 14/14, media regression 3/3;
 - **PASS** — StrictMode regression;
 - **PASS** — runtime A/B; Windows RSS и текущий memory-сценарий C выполнены, сравнение D не оценивалось без baseline;
 - **PASS** — paired stroke latency E (63 образца): p50 28,60 → 28,20 мс, p95 33,80 → 32,50 мс; canvas после commit идентичен baseline;

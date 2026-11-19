@@ -870,6 +870,112 @@ async function s20WidthProfile() {
   } finally { await context.close().catch(() => {}) }
 }
 
+// ---------- Scenario 21: multi-select group move/scale/rotate + exact Undo ----------
+async function s21VectorGroups() {
+  const { context, page, trackers } = await freshContext()
+  try {
+    const box = await canvasBox(page)
+    await page.keyboard.press('p')
+    await sleep(250)
+    for (const [x, y] of [[500, 500], [650, 500]]) {
+      const point = docToClient(box, x, y)
+      await page.mouse.click(point.x, point.y)
+      await sleep(100)
+    }
+    await page.keyboard.press('Enter')
+    await sleep(250)
+    for (const [x, y] of [[500, 700], [650, 700]]) {
+      const point = docToClient(box, x, y)
+      await page.mouse.click(point.x, point.y)
+      await sleep(100)
+    }
+    await page.keyboard.press('Enter')
+    await sleep(350)
+    const beforeFile = '/tmp/trafaret-groups-before.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), beforeFile)
+    const beforeJson = JSON.parse(await readFile(beforeFile, 'utf8'))
+    const beforeObjects = beforeJson.layers.find(layer => layer.kind === 'vector')?.objects ?? []
+    if (beforeObjects.length !== 2) throw new Error('expected two vector objects')
+    await page.click('button[aria-label="Кисть (B)"]')
+    await page.keyboard.press('Escape')
+    await sleep(250)
+    const sampleBefore = await sampleGrid(page)
+
+    await page.keyboard.press('v')
+    await sleep(250)
+    const first = docToClient(box, 575, 500)
+    await page.mouse.click(first.x, first.y)
+    await sleep(150)
+    const second = docToClient(box, 575, 700)
+    await page.keyboard.down('Shift')
+    await page.mouse.click(second.x, second.y)
+    await page.keyboard.up('Shift')
+    await page.mouse.move(first.x, first.y)
+    await page.mouse.down()
+    const moveTarget = docToClient(box, 625, 540)
+    await page.mouse.move(moveTarget.x, moveTarget.y, { steps: 6 })
+    await page.mouse.up()
+    await sleep(300)
+    const moveFile = '/tmp/trafaret-groups-move.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), moveFile)
+    const moveJson = JSON.parse(await readFile(moveFile, 'utf8'))
+    const movedObjects = moveJson.layers.find(layer => layer.kind === 'vector')?.objects ?? []
+    const moved = beforeObjects.every(before => {
+      const after = movedObjects.find(object => object.id === before.id)
+      return after?.transform?.x === before.transform.x + 50 && after?.transform?.y === before.transform.y + 40
+    })
+
+    const scaleFrom = docToClient(box, 700, 740)
+    const scaleTo = docToClient(box, 760, 800)
+    await page.mouse.move(scaleFrom.x, scaleFrom.y)
+    await page.mouse.down()
+    await page.mouse.move(scaleTo.x, scaleTo.y, { steps: 6 })
+    await page.mouse.up()
+    await sleep(300)
+    const scaleFile = '/tmp/trafaret-groups-scale.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), scaleFile)
+    const scaleJson = JSON.parse(await readFile(scaleFile, 'utf8'))
+    const scaledObjects = scaleJson.layers.find(layer => layer.kind === 'vector')?.objects ?? []
+    const scaled = beforeObjects.every(before => scaledObjects.find(object => object.id === before.id)?.transform?.scale > 1)
+
+    const scaleRatio = scaledObjects[0].transform.scale
+    const rotateHandleY = 540 + (500 - 540) * scaleRatio - 22 / (box.width / box.docW)
+    const rotateFrom = docToClient(box, 625, rotateHandleY)
+    await page.screenshot({ path: path.join(shotsDir, '21-group-before-rotate.png') })
+    const rotateTo = docToClient(box, 550, 300)
+    await page.mouse.move(rotateFrom.x, rotateFrom.y)
+    await page.mouse.down()
+    await page.mouse.move(rotateTo.x, rotateTo.y, { steps: 6 })
+    await page.mouse.up()
+    await sleep(300)
+    const rotateFile = '/tmp/trafaret-groups-rotate.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), rotateFile)
+    const rotateJson = JSON.parse(await readFile(rotateFile, 'utf8'))
+    const rotatedObjects = rotateJson.layers.find(layer => layer.kind === 'vector')?.objects ?? []
+    const rotated = beforeObjects.every(before => Math.abs(rotatedObjects.find(object => object.id === before.id)?.transform?.rotation ?? 0) > 0.01)
+
+    for (let index = 0; index < 3; index++) {
+      await page.keyboard.press('Control+z')
+      await sleep(250)
+    }
+    await page.click('button[aria-label="Кисть (B)"]')
+    await page.keyboard.press('Escape')
+    await sleep(250)
+    const sampleUndone = await sampleGrid(page)
+    const undoFile = '/tmp/trafaret-groups-undo.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), undoFile)
+    const undoJson = JSON.parse(await readFile(undoFile, 'utf8'))
+    const undoObjects = undoJson.layers.find(layer => layer.kind === 'vector')?.objects ?? []
+    await page.screenshot({ path: path.join(shotsDir, '21-group-after-undo.png') })
+    const err = errorSummary(trackers)
+    return {
+      status: moved && scaled && rotated && exactEqual(sampleUndone, sampleBefore) && err.clean ? 'PASS' : 'FAIL',
+      evidence: { moved, scaled, rotated, undoExact: exactEqual(sampleUndone, sampleBefore),
+        undoDiffPixels: diffPixels(sampleUndone, sampleBefore), undoTransforms: undoObjects.map(object => object.transform), ...err },
+    }
+  } finally { await context.close().catch(() => {}) }
+}
+
 // ---------- main ----------
 const started = Date.now()
 console.log(`[audit] production dist=${distDir}`)
@@ -888,6 +994,7 @@ const scenarios = [
   ['18-bezier-handles', 'Bezier handle creation, persistence, Undo/Redo and cubic SVG output', s18BezierHandles],
   ['19-path-segments', 'Alt+click inserts a path node and double-click deletes it with exact Undo', s19PathSegments],
   ['20-width-profile', 'Alt+wheel changes per-node width profile with Undo/Redo and SVG parity', s20WidthProfile],
+  ['21-vector-groups', 'Shift multi-select moves, scales and rotates a vector group with exact Undo', s21VectorGroups],
 ]
 
 const report = {

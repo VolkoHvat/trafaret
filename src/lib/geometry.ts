@@ -235,6 +235,44 @@ export function adjustWidthProfile(object: VectorObject, index: number, delta: n
   return value
 }
 
+export function unionBounds(items: Bounds[]): Bounds {
+  return {
+    minX: Math.min(...items.map(item => item.minX)),
+    minY: Math.min(...items.map(item => item.minY)),
+    maxX: Math.max(...items.map(item => item.maxX)),
+    maxY: Math.max(...items.map(item => item.maxY)),
+  }
+}
+
+export function transformVectorGroup(
+  objects: VectorObject[],
+  original: Record<string, VectorTransform>,
+  center: Point,
+  mode: 'move' | 'scale' | 'rotate',
+  value: { x: number; y: number } | number,
+) {
+  for (const object of objects) {
+    const transform = original[object.id]
+    if (!transform) continue
+    const origin = objectOrigin(object)
+    const x = origin.x + transform.x, y = origin.y + transform.y
+    if (mode === 'move' && typeof value === 'object') {
+      object.transform.x = transform.x + value.x
+      object.transform.y = transform.y + value.y
+    } else if (mode === 'scale' && typeof value === 'number') {
+      object.transform.x = center.x + (x - center.x) * value - origin.x
+      object.transform.y = center.y + (y - center.y) * value - origin.y
+      object.transform.scale = transform.scale * value
+    } else if (mode === 'rotate' && typeof value === 'number') {
+      const angle = value * Math.PI / 180
+      const dx = x - center.x, dy = y - center.y
+      object.transform.x = center.x + dx * Math.cos(angle) - dy * Math.sin(angle) - origin.x
+      object.transform.y = center.y + dx * Math.sin(angle) + dy * Math.cos(angle) - origin.y
+      object.transform.rotation = transform.rotation + value
+    }
+  }
+}
+
 export function applyObjectTransform(ctx: CanvasRenderingContext2D, object: VectorObject) {
   const { x: cx, y: cy } = objectOrigin(object)
   ctx.translate(cx + object.transform.x, cy + object.transform.y)

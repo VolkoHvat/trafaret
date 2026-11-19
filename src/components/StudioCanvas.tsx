@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef } from 'react'
 import type {
   BrushConfig, DocModel, GuideMode, LayerModel, SelectionModel, ShapeKind,
-  SymmetryMode, ToolId, VectorObject, ViewState,
+  SymmetryMode, ToolId, VectorObject, VectorTransform, ViewState,
 } from '../types'
 import { renderStroke, widthAt, type StrokePoint } from '../lib/brushes'
 import { floodFill } from '../lib/fill'
@@ -14,7 +14,8 @@ import { decodeRasterImage, makeRasterHistoryEntry, type RasterHistoryEntry } fr
 import { copyPoints, StrokeSession, symmetricObjects } from '../lib/stroke-session'
 import {
   adjustWidthProfile, defaultVectorTransform, ensureObjectOrigin, insertControlPoint, moveControlHandle, moveControlPoint,
-  nearestControlHandle, nearestControlPoint, objectBounds, objectOrigin, removeControlPoint, supportsControlPoints, worldPoint,
+  nearestControlHandle, nearestControlPoint, objectBounds, objectOrigin, removeControlPoint,
+  supportsControlPoints, transformVectorGroup, unionBounds, worldPoint,
 } from '../lib/geometry'
 import {
   cloneObjects, hitVectorObject, renderVectorLayer, renderVectorObject, vectorId,
@@ -51,6 +52,7 @@ interface Props {
   selection: SelectionModel | null
   maskEditing: boolean
   selectedObjectId: string | null
+  selectedObjectIds?: string[]
   stencil: boolean
   stylusOnly: boolean
   flipped: boolean
@@ -63,6 +65,7 @@ interface Props {
   onNotice: (message: string) => void
   onSelectionChange: (selection: SelectionModel | null) => void
   onSelectObject: (id: string | null) => void
+  onSelectObjects: (ids: string[]) => void
 }
 
 interface Rect { x: number; y: number; width: number; height: number }
@@ -92,6 +95,7 @@ interface ObjectDrag {
   mode: ObjectDragMode
   nodeIndex?: number
   handleSide?: 'in' | 'out'
+  group?: { ids: string[]; original: Record<string, VectorTransform> }
   start: StrokePoint
   before: VectorObject[]
   original: VectorObject
@@ -259,7 +263,24 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
 
     const active = layers.find(layer => layer.id === activeLayerId)
     const selected = active?.objects?.find(object => object.id === selectedObjectId)
-    if (selected && !maskEditing) {
+    const selectedIds = propsRef.current.selectedObjectIds ?? (selectedObjectId ? [selectedObjectId] : [])
+    const group = active?.objects?.filter(object => selectedIds.includes(object.id)) ?? []
+    if (group.length > 1 && !maskEditing) {
+      const bounds = unionBounds(group.map(objectBounds))
+      const rotateX = (bounds.minX + bounds.maxX) / 2, rotateY = bounds.minY - 22 * unit
+      ctx.save()
+      ctx.strokeStyle = '#8b7d25'
+      ctx.fillStyle = '#fbfda4'
+      ctx.lineWidth = 1.4 * unit
+      ctx.setLineDash([5 * unit, 4 * unit])
+      ctx.strokeRect(bounds.minX, bounds.minY, bounds.maxX - bounds.minX, bounds.maxY - bounds.minY)
+      ctx.setLineDash([])
+      const handle = 9 * unit
+      ctx.beginPath(); ctx.moveTo(rotateX, bounds.minY); ctx.lineTo(rotateX, rotateY); ctx.stroke()
+      ctx.fillRect(bounds.maxX - handle / 2, bounds.maxY - handle / 2, handle, handle)
+      ctx.beginPath(); ctx.arc(rotateX, rotateY, handle / 2, 0, Math.PI * 2); ctx.fill()
+      ctx.restore()
+    } else if (selected && !maskEditing) {
       const bounds = objectBounds(selected)
       ctx.save()
       ctx.strokeStyle = '#8b7d25'
@@ -684,6 +705,18 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     const layer = layers.find(item => item.id === activeLayerId)
     if (!layer || layer.kind !== 'vector' || layer.locked) return
     const objects = layer.objects ?? []
+    const selectedIds = propsRef.current.selectedObjectIds ?? (selectedObjectId ? [selectedObjectId] : [])
+    if (event.shiftKey) {
+      const tolerance = 13 / Math.max(0.03, view.zoom)
+      const hit = hitVectorObject(objects, point[0], point[1], tolerance)
+      const ids = new Set(selectedIds)
+      if (hit) {
+        if (ids.has(hit.id)) ids.delete(hit.id)
+        else ids.add(hit.id)
+      }
+      propsRef.current.onSelectObjects([...ids])
+      return
+    }
     const before = cloneObjects(objects)
     objects.forEach(ensureObjectOrigin)
     const selected = objects.find(object => object.id === selectedObjectId)
@@ -692,6 +725,28 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     let nodeIndex: number | undefined
     let handleSide: 'in' | 'out' | undefined
     const tolerance = 13 / Math.max(0.03, view.zoom)
+    const group = objects.filter(object => selectedIds.includes(object.id))
+    if (group.length > 1) {
+      const bounds = unionBounds(group.map(objectBounds))
+      const rotateX = (bounds.minX + bounds.maxX) / 2, rotateY = bounds.minY - 22 / view.zoom
+      if (Math.hypot(point[0] - bounds.maxX, point[1] - bounds.maxY) <= tolerance) mode = 'scale'
+      else if (Math.hypot(point[0] - rotateX, point[1] - rotateY) <= tolerance) mode = 'rotate'
+      if (mode !== 'move' || hitVectorObject(group, point[0], point[1], tolerance)) {
+        const centerX = (bounds.minX + bounds.maxX) / 2, centerY = (bounds.minY + bounds.maxY) / 2
+        objectDragRef.current = {
+          pointerId: event.pointerId, layerId: layer.id, objectId: group[0].id, mode,
+          start: point, before, original: JSON.parse(JSON.stringify(group[0])) as VectorObject,
+          group: {
+            ids: group.map(object => object.id),
+            original: Object.fromEntries(group.map(object => [object.id, { ...object.transform }])),
+          },
+          centerX, centerY,
+          startDistance: Math.max(1, Math.hypot(point[0] - centerX, point[1] - centerY)),
+          startAngle: Math.atan2(point[1] - centerY, point[0] - centerX),
+        }
+        return
+      }
+    }
     if (selected) {
       const bounds = objectBounds(selected)
       const rotateX = (bounds.minX + bounds.maxX) / 2, rotateY = bounds.minY - 22 / view.zoom
@@ -749,6 +804,25 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     const layer = propsRef.current.layers.find(item => item.id === drag.layerId)
     const object = layer?.objects?.find(item => item.id === drag.objectId)
     if (!layer || !object) return
+    if (drag.group) {
+      const group = layer.objects?.filter(item => drag.group!.ids.includes(item.id)) ?? []
+      if (drag.mode === 'move') {
+        transformVectorGroup(group, drag.group.original, { x: drag.centerX, y: drag.centerY }, 'move', {
+          x: point[0] - drag.start[0], y: point[1] - drag.start[1],
+        })
+      } else if (drag.mode === 'scale') {
+        const distance = Math.hypot(point[0] - drag.centerX, point[1] - drag.centerY)
+        transformVectorGroup(group, drag.group.original, { x: drag.centerX, y: drag.centerY }, 'scale',
+          clamp(distance / drag.startDistance, 0.05, 20))
+      } else if (drag.mode === 'rotate') {
+        const angle = Math.atan2(point[1] - drag.centerY, point[0] - drag.centerX)
+        transformVectorGroup(group, drag.group.original, { x: drag.centerX, y: drag.centerY }, 'rotate',
+          (angle - drag.startAngle) * 180 / Math.PI)
+      }
+      renderVectorLayer(layer)
+      scheduleRender()
+      return
+    }
     if (drag.mode === 'move') {
       object.transform.x = drag.original.transform.x + point[0] - drag.start[0]
       object.transform.y = drag.original.transform.y + point[1] - drag.start[1]

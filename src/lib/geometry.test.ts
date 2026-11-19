@@ -3,7 +3,7 @@ import type { VectorObject } from '../types'
 import {
   adjustWidthProfile, applyObjectTransform, baseObjectBounds, insertControlPoint, localPoint, moveControlHandle, moveControlPoint,
   nearestControlHandle, nearestControlPoint, objectOrigin, objectSvgTransform, removeControlPoint, shapePath,
-  shapeSvgPath, supportsControlPoints, vectorPath, vectorSvgPath, worldPoint,
+  shapeSvgPath, supportsControlPoints, transformVectorGroup, unionBounds, vectorPath, vectorSvgPath, worldPoint,
 } from './geometry'
 import { renderVectorObject, vectorObjectToSvg } from './vector'
 
@@ -201,5 +201,38 @@ describe('width profile', () => {
     const svg = vectorObjectToSvg(object)
     expect(svg).toContain('stroke-width="15"')
     expect(svg).toContain('stroke-width="25"')
+  })
+})
+
+describe('vector groups', () => {
+  it('moves, scales and rotates all selected objects around one center', () => {
+    const first = arcObject()
+    const second = { ...arcObject(), id: 'arc-2' }
+    first.transform = { x: 10, y: 20, scale: 1, rotation: 0 }
+    second.transform = { x: -20, y: 40, scale: 2, rotation: 15 }
+    const objects = [first, second]
+    const original = Object.fromEntries(objects.map(object => [object.id, { ...object.transform }]))
+    const center = { x: 400, y: 120 }
+
+    transformVectorGroup(objects, original, center, 'move', { x: 5, y: -5 })
+    expect(first.transform).toMatchObject({ x: 15, y: 15, scale: 1, rotation: 0 })
+    expect(second.transform).toMatchObject({ x: -15, y: 35, scale: 2, rotation: 15 })
+
+    transformVectorGroup(objects, original, center, 'scale', 2)
+    expect(first.transform).toMatchObject({ x: 20, y: 40, scale: 2, rotation: 0 })
+    expect(second.transform).toMatchObject({ x: -40, y: 80, scale: 4, rotation: 15 })
+
+    transformVectorGroup(objects, original, center, 'rotate', 90)
+    expect(first.transform.x).toBeCloseTo(-20)
+    expect(first.transform.y).toBeCloseTo(10)
+    expect(first.transform.rotation).toBe(90)
+    expect(second.transform.x).toBeCloseTo(-40)
+    expect(second.transform.y).toBeCloseTo(-20)
+    expect(second.transform.rotation).toBe(105)
+
+    expect(unionBounds([
+      { minX: 10, minY: 20, maxX: 30, maxY: 40 },
+      { minX: -5, minY: 15, maxX: 50, maxY: 25 },
+    ])).toEqual({ minX: -5, minY: 15, maxX: 50, maxY: 40 })
   })
 })

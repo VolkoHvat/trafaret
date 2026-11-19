@@ -78,6 +78,7 @@ export default function App() {
   const [selection, setSelection] = useState<SelectionModel | null>(null)
   const [maskEditing, setMaskEditing] = useState(false)
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null)
+  const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>([])
   const [stencil, setStencil] = useState(false)
   const [stylusOnly, setStylusOnly] = useState(workspaceSettings.stylusOnly ?? true)
   const [flipped, setFlipped] = useState(false)
@@ -112,6 +113,14 @@ export default function App() {
   const currentBrush = activeCustomIndex !== null && customPresets[activeCustomIndex]
     ? customPresets[activeCustomIndex].config
     : brushes[brushId]
+  const selectObjects = useCallback((ids: string[]) => {
+    setSelectedObjectIds(ids)
+    setSelectedObjectId(ids[ids.length - 1] ?? null)
+  }, [])
+  const selectObject = useCallback((id: string | null) => selectObjects(id ? [id] : []), [selectObjects])
+  useEffect(() => {
+    if (!selectedObjectId) setSelectedObjectIds([])
+  }, [selectedObjectId])
 
   useEffect(() => {
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ brushId, brushes, customPresets, color, stylusOnly })) }
@@ -144,6 +153,7 @@ export default function App() {
   const resetEditorContext = () => {
     setSelection(null)
     setSelectedObjectId(null)
+    setSelectedObjectIds([])
     setMaskEditing(false)
   }
 
@@ -665,11 +675,11 @@ export default function App() {
             key={projectSession} ref={studioRef} projectSession={projectSession} doc={doc} layers={layers} activeLayerId={activeLayerId}
             tool={tool} brush={currentBrush} color={color} symmetry={symmetry} radialCount={radialCount}
             guide={guide} shapeKind={shapeKind} areaShape={areaShape} selection={selection}
-            maskEditing={maskEditing} selectedObjectId={selectedObjectId} stencil={stencil}
+            maskEditing={maskEditing} selectedObjectId={selectedObjectId} selectedObjectIds={selectedObjectIds} stencil={stencil}
             stylusOnly={stylusOnly} flipped={flipped} view={view} renderToken={renderToken}
             onViewChange={setView} onMutated={mutate} onHistoryChange={(undo, redo) => { setCanUndo(undo); setCanRedo(redo) }}
             onPickColor={picked => { setColor(picked); setTool('brush') }} onNotice={showNotice}
-            onSelectionChange={setSelection} onSelectObject={setSelectedObjectId}
+            onSelectionChange={setSelection} onSelectObject={selectObject} onSelectObjects={selectObjects}
           />
         </main>
 
@@ -768,7 +778,7 @@ export default function App() {
 
       <StudioDialog open={modal === 'help'} onOpenChange={open => !open && setModal(null)} title="Профессиональный рабочий цикл" description="Растровая живопись и редактируемый векторный линворк в одном локальном документе.">
         <div className="help-content">
-          <section><h3>Линворк</h3><ol><li>Импортируйте скан в правой панели.</li><li>Добавьте растровый слой для свободной кисти или векторный для редактируемых контуров.</li><li>На векторном слое рисуйте кистью, линией, фигурами и пером. Инструмент «Объект» перемещает, масштабирует и вращает объекты; узлы пера и векторных штрихов редактируются отдельно. Alt+перетаскивание узла пера создаёт кривую Безье, её ручки двигаются отдельно. Alt+click по сегменту добавляет узел, двойной click по узлу удаляет его. Alt+колесо над узлом меняет его толщину.</li><li>Проверьте трафарет и экспортируйте PNG, SVG или печать в миллиметрах.</li><li>«Проверка эскиза» запускает локальный анализ узлов, деталей и композиции — это рекомендации, а не ошибки.</li></ol></section>
+          <section><h3>Линворк</h3><ol><li>Импортируйте скан в правой панели.</li><li>Добавьте растровый слой для свободной кисти или векторный для редактируемых контуров.</li><li>На векторном слое рисуйте кистью, линией, фигурами и пером. Инструмент «Объект» перемещает, масштабирует и вращает объекты; Shift+click выбирает группу для совместной трансформации; узлы пера и векторных штрихов редактируются отдельно. Alt+перетаскивание узла пера создаёт кривую Безье, её ручки двигаются отдельно. Alt+click по сегменту добавляет узел, двойной click по узлу удаляет его. Alt+колесо над узлом меняет его толщину.</li><li>Проверьте трафарет и экспортируйте PNG, SVG или печать в миллиметрах.</li><li>«Проверка эскиза» запускает локальный анализ узлов, деталей и композиции — это рекомендации, а не ошибки.</li></ol></section>
           <section><h3>Выделения и маски</h3><p>Область, эллипс и лассо ограничивают кисть, заливку и очистку. Инструмент «Объект» перемещает выделенные растровые пиксели. Маска не удаляет исходник: кисть показывает, ластик скрывает.</p></section>
           <section><h3>Клавиши</h3><div className="shortcut-grid"><span><kbd>V</kbd> Объект</span><span><kbd>B</kbd> Кисть</span><span><kbd>E</kbd> Ластик</span><span><kbd>P</kbd> Перо</span><span><kbd>S</kbd> Фигура</span><span><kbd>G</kbd> Заливка</span><span><kbd>A</kbd> Область</span><span><kbd>W</kbd> Лассо</span><span><kbd>M</kbd> Симметрия</span><span><kbd>T</kbd> Трафарет</span><span><kbd>[ ]</kbd> Размер</span><span><kbd>0</kbd> Вписать</span></div></section>
           <section><h3>Планшет и Windows</h3><p>Один контакт рисует, два пальца масштабируют холст. «Только перо» блокирует следы ладони. На Windows 10/11 приложение работает в Edge или Chrome и устанавливается как PWA. «Диагностика устройства» в верхней панели локально проверяет Canvas 2D, маски, нажим пера и фильтры трафарета — без сети и без отправки данных.</p></section>

@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { VectorObject } from '../types'
 import {
-  applyObjectTransform, baseObjectBounds, insertControlPoint, localPoint, moveControlHandle, moveControlPoint,
+  adjustWidthProfile, applyObjectTransform, baseObjectBounds, insertControlPoint, localPoint, moveControlHandle, moveControlPoint,
   nearestControlHandle, nearestControlPoint, objectOrigin, objectSvgTransform, removeControlPoint, shapePath,
   shapeSvgPath, supportsControlPoints, vectorPath, vectorSvgPath, worldPoint,
 } from './geometry'
+import { renderVectorObject, vectorObjectToSvg } from './vector'
 
 function arcObject(): VectorObject {
   return {
@@ -165,5 +166,40 @@ describe('path segments', () => {
     expect(removeControlPoint(object, 1)).toBe(true)
     expect(object.points).toHaveLength(2)
     expect(removeControlPoint(object, 0)).toBe(false)
+  })
+})
+
+describe('width profile', () => {
+  it('clamps multipliers and renders each path segment with its own width', () => {
+    class FakePath2D {
+      moveTo = vi.fn()
+      lineTo = vi.fn()
+      bezierCurveTo = vi.fn()
+      closePath = vi.fn()
+    }
+    vi.stubGlobal('Path2D', FakePath2D)
+    const object = arcObject()
+    object.kind = 'path'
+    object.shape = undefined
+    object.points = [[100, 100, 0.5], [200, 100, 0.5], [300, 200, 0.5]]
+    object.widthProfile = { 0: 1, 1: 2, 2: 3 }
+
+    expect(adjustWidthProfile(object, 1, 0.5)).toBe(2.5)
+    expect(adjustWidthProfile(object, 1, 10)).toBe(4)
+    expect(adjustWidthProfile(object, 1, -10)).toBe(0.1)
+
+    object.widthProfile = { 0: 1, 1: 2, 2: 3 }
+    const ctx = {
+      save: vi.fn(), restore: vi.fn(), stroke: vi.fn(), fill: vi.fn(), setLineDash: vi.fn(),
+      translate: vi.fn(), rotate: vi.fn(), scale: vi.fn(),
+      lineWidth: 0,
+    } as unknown as CanvasRenderingContext2D
+    renderVectorObject(ctx, object)
+    expect(ctx.stroke).toHaveBeenCalledTimes(2)
+    expect(ctx.lineWidth).toBe(25)
+
+    const svg = vectorObjectToSvg(object)
+    expect(svg).toContain('stroke-width="15"')
+    expect(svg).toContain('stroke-width="25"')
   })
 })

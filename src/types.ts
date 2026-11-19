@@ -62,6 +62,7 @@ export interface VectorObject {
   angles?: [number, number]
   origin?: { x: number; y: number }
   handles?: Record<number, ControlHandle>
+  widthProfile?: Record<number, number>
   clips?: SelectionModel[]
   transform: VectorTransform
 }

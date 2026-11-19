@@ -46,6 +46,7 @@ export function symmetricObjects(object: VectorObject, doc: DocModel, mode: Symm
     id: index === 0 ? object.id : idFactory(),
     points: copyPoints(points),
     handles: index === 0 ? object.handles : symmetricHandles(object, doc, mode, radialCount, index),
+    widthProfile: object.widthProfile ? { ...object.widthProfile } : undefined,
     origin: undefined,
     brush: { ...object.brush },
     transform: defaultVectorTransform(),

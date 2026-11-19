@@ -75,8 +75,15 @@ export function getSvgPathFromStroke(points: number[][], closed = true) {
   return result
 }
 
-export function getStrokePathData(points: StrokePoint[], brush: BrushConfig, complete: boolean, pen: boolean) {
-  const outline = getStroke(points, {
+export function widthAt(widthProfile: Record<number, number> | undefined, index: number) {
+  return widthProfile?.[index] ?? 1
+}
+
+export function getStrokePathData(points: StrokePoint[], brush: BrushConfig, complete: boolean, pen: boolean, widthProfile?: Record<number, number>) {
+  const profiled = widthProfile
+    ? points.map((point, index) => [point[0], point[1], point[2] * widthAt(widthProfile, index)] as StrokePoint)
+    : points
+  const outline = getStroke(profiled, {
     size: brush.size,
     thinning: brush.thinning,
     smoothing: brush.smoothing,
@@ -90,19 +97,19 @@ export function getStrokePathData(points: StrokePoint[], brush: BrushConfig, com
   return getSvgPathFromStroke(outline)
 }
 
-function pathFromPoints(points: StrokePoint[], brush: BrushConfig, complete: boolean, pen: boolean) {
-  const d = getStrokePathData(points, brush, complete, pen)
+function pathFromPoints(points: StrokePoint[], brush: BrushConfig, complete: boolean, pen: boolean, widthProfile?: Record<number, number>) {
+  const d = getStrokePathData(points, brush, complete, pen, widthProfile)
   return d ? new Path2D(d) : null
 }
 
-function drawDotwork(ctx: CanvasRenderingContext2D, points: StrokePoint[], brush: BrushConfig, color: string) {
+function drawDotwork(ctx: CanvasRenderingContext2D, points: StrokePoint[], brush: BrushConfig, color: string, widthProfile?: Record<number, number>) {
   if (!points.length) return
   const spacing = Math.max(2.2, brush.size * 0.85)
   let carry = 0
   ctx.fillStyle = color
   if (points.length === 1) {
     const [x, y, pressure] = points[0]
-    const curve = pressureEasing(brush.pressureCurve)(pressure)
+    const curve = pressureEasing(brush.pressureCurve)(pressure * widthAt(widthProfile, 0))
     const radius = Math.max(0.35, brush.size * (0.18 + curve * brush.thinning) / 2)
     ctx.globalAlpha = brush.opacity * (0.45 + pressure * 0.55)
     ctx.beginPath()
@@ -121,7 +128,7 @@ function drawDotwork(ctx: CanvasRenderingContext2D, points: StrokePoint[], brush
     while (traveled <= distance) {
       const t = traveled / distance
       const pressure = a[2] + (b[2] - a[2]) * t
-      const curve = pressureEasing(brush.pressureCurve)(pressure)
+      const curve = pressureEasing(brush.pressureCurve)(pressure * widthAt(widthProfile, i))
       const radius = Math.max(0.35, brush.size * (0.18 + curve * brush.thinning) / 2)
       const seed = i * 17.17 + traveled * 0.73
       const jx = Math.sin(seed) * brush.jitter
@@ -144,6 +151,7 @@ export function renderStroke(
   complete: boolean,
   pen: boolean,
   eraser = false,
+  widthProfile?: Record<number, number>,
 ) {
   if (!points.length) return
   const rendering = brushRendering(brush)
@@ -155,12 +163,12 @@ export function renderStroke(
   ctx.globalCompositeOperation = eraser ? 'destination-out' : 'source-over'
 
   if (rendering.dotwork && !eraser) {
-    drawDotwork(ctx, points, brush, color)
+    drawDotwork(ctx, points, brush, color, widthProfile)
     ctx.restore()
     return
   }
 
-  const path = pathFromPoints(points, brush, complete, pen)
+  const path = pathFromPoints(points, brush, complete, pen, widthProfile)
   if (!path) {
     const p = points[0]
     ctx.globalAlpha = brush.opacity

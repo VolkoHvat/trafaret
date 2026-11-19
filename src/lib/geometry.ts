@@ -196,8 +196,16 @@ export function insertControlPoint(object: VectorObject, point: VectorObject['po
     remapped[nextIndex] = { ...remapped[nextIndex], in: split.leftIn, out: split.rightOut }
     remapped[nextIndex + 1] = { ...remapped[nextIndex + 1], in: split.inB }
   }
+  const oldWidths = object.widthProfile ?? {}
+  const widths: Record<number, number> = {}
+  for (const [key, width] of Object.entries(oldWidths)) {
+    const oldIndex = Number(key)
+    widths[oldIndex > index ? oldIndex + 1 : oldIndex] = width
+  }
+  if (Object.keys(oldWidths).length) widths[nextIndex] = ((oldWidths[index] ?? 1) + (oldWidths[nextIndex] ?? 1)) / 2
   object.points.splice(nextIndex, 0, [nearest.x, nearest.y, a[2] + (b[2] - a[2]) * nearest.t])
   object.handles = remapped
+  object.widthProfile = widths
   return nextIndex
 }
 
@@ -212,7 +220,19 @@ export function removeControlPoint(object: VectorObject, index: number): boolean
     else if (oldIndex > index) remapped[oldIndex - 1] = handles
   }
   object.handles = remapped
+  object.widthProfile = Object.fromEntries(Object.entries(object.widthProfile ?? {})
+    .filter(([key]) => Number(key) !== index)
+    .map(([key, width]) => [Number(key) > index ? Number(key) - 1 : Number(key), width]))
   return true
+}
+
+export function adjustWidthProfile(object: VectorObject, index: number, delta: number): number | undefined {
+  if (!supportsControlPoints(object) || !object.points[index]) return undefined
+  const current = object.widthProfile?.[index] ?? 1
+  const value = Math.round(Math.max(0.1, Math.min(4, current + delta)) * 100) / 100
+  object.widthProfile ??= {}
+  object.widthProfile[index] = value
+  return value
 }
 
 export function applyObjectTransform(ctx: CanvasRenderingContext2D, object: VectorObject) {
@@ -266,11 +286,13 @@ function pathSegments(object: VectorObject) {
   return segments
 }
 
-export function vectorPath(object: VectorObject): Path2D {
+export function vectorPath(object: VectorObject, segmentIndex?: number): Path2D {
   const path = new Path2D()
-  if (!object.points.length) return path
-  path.moveTo(object.points[0][0], object.points[0][1])
-  for (const [a, b, index] of pathSegments(object)) {
+  const start = segmentIndex === undefined ? object.points[0] : object.points[segmentIndex]
+  if (!start) return path
+  path.moveTo(start[0], start[1])
+  const segments = segmentIndex === undefined ? pathSegments(object) : pathSegments(object).filter(([, , index]) => index === segmentIndex)
+  for (const [a, b, index] of segments) {
     const nextIndex = index + 1 === object.points.length ? 0 : index + 1
     const out = object.handles?.[index]?.out
     const incoming = object.handles?.[nextIndex]?.in
@@ -287,11 +309,13 @@ export function pointsToPath(points: readonly GeometryPoint[], closed = false): 
   return points.map((point, index) => `${index ? 'L' : 'M'}${point[0].toFixed(2)},${point[1].toFixed(2)}`).join(' ') + (closed ? ' Z' : '')
 }
 
-export function vectorSvgPath(object: VectorObject): string {
-  if (!Object.keys(object.handles ?? {}).length) return pointsToPath(object.points, object.closed)
-  if (!object.points.length) return ''
-  let d = `M${object.points[0][0].toFixed(2)},${object.points[0][1].toFixed(2)}`
-  for (const [a, b, index] of pathSegments(object)) {
+export function vectorSvgPath(object: VectorObject, segmentIndex?: number): string {
+  if (segmentIndex === undefined && !Object.keys(object.handles ?? {}).length) return pointsToPath(object.points, object.closed)
+  const start = segmentIndex === undefined ? object.points[0] : object.points[segmentIndex]
+  if (!start) return ''
+  let d = `M${start[0].toFixed(2)},${start[1].toFixed(2)}`
+  const segments = segmentIndex === undefined ? pathSegments(object) : pathSegments(object).filter(([, , index]) => index === segmentIndex)
+  for (const [a, b, index] of segments) {
     const nextIndex = index + 1 === object.points.length ? 0 : index + 1
     const out = object.handles?.[index]?.out
     const incoming = object.handles?.[nextIndex]?.in
@@ -300,7 +324,7 @@ export function vectorSvgPath(object: VectorObject): string {
       d += ` C${c1[0].toFixed(2)},${c1[1].toFixed(2)} ${c2[0].toFixed(2)},${c2[1].toFixed(2)} ${b[0].toFixed(2)},${b[1].toFixed(2)}`
     } else d += ` L${b[0].toFixed(2)},${b[1].toFixed(2)}`
   }
-  return d + (object.closed ? ' Z' : '')
+  return d + (object.closed && segmentIndex === undefined ? ' Z' : '')
 }
 
 export function shapeSvgPath(object: VectorObject): string {

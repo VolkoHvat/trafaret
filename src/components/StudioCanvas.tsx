@@ -3,7 +3,7 @@ import type {
   BrushConfig, DocModel, GuideMode, LayerModel, SelectionModel, ShapeKind,
   SymmetryMode, ToolId, VectorObject, ViewState,
 } from '../types'
-import { renderStroke, type StrokePoint } from '../lib/brushes'
+import { renderStroke, widthAt, type StrokePoint } from '../lib/brushes'
 import { floodFill } from '../lib/fill'
 import { clipToSelection, drawSelectionOutline, selectionBounds } from '../lib/selection'
 import { analyzeArtwork, type ArtworkLayer, type ArtworkReport } from '../lib/artwork-analysis'
@@ -13,7 +13,7 @@ import { HistoryStore } from '../lib/history'
 import { decodeRasterImage, makeRasterHistoryEntry, type RasterHistoryEntry } from '../lib/raster-history'
 import { copyPoints, StrokeSession, symmetricObjects } from '../lib/stroke-session'
 import {
-  defaultVectorTransform, ensureObjectOrigin, insertControlPoint, moveControlHandle, moveControlPoint,
+  adjustWidthProfile, defaultVectorTransform, ensureObjectOrigin, insertControlPoint, moveControlHandle, moveControlPoint,
   nearestControlHandle, nearestControlPoint, objectBounds, objectOrigin, removeControlPoint, supportsControlPoints, worldPoint,
 } from '../lib/geometry'
 import {
@@ -275,10 +275,14 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       ctx.fillRect(scaleX - handle / 2, scaleY - handle / 2, handle, handle)
       ctx.beginPath(); ctx.arc(rotateX, rotateY, handle / 2, 0, Math.PI * 2); ctx.fill()
       if (supportsControlPoints(selected)) {
-        for (const point of selected.points) {
+        for (const [index, point] of selected.points.entries()) {
           const [x, y] = worldPoint(point, selected)
           ctx.beginPath(); ctx.arc(x, y, 4.5 * unit, 0, Math.PI * 2); ctx.fill()
           ctx.stroke()
+          if (selected.widthProfile?.[index] !== undefined) {
+            ctx.font = `${10 * unit}px sans-serif`
+            ctx.fillText(`×${widthAt(selected.widthProfile, index)}`, x + 8 * unit, y - 8 * unit)
+          }
         }
         for (const [key, handles] of Object.entries(selected.handles ?? {})) {
           const node = selected.points[Number(key)]
@@ -1108,7 +1112,24 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
 
   const handleWheel = useCallback((event: WheelEvent) => {
     event.preventDefault()
-    const { view, flipped, doc } = propsRef.current
+    const { view, flipped, doc, layers, activeLayerId, selectedObjectId } = propsRef.current
+    if (event.altKey) {
+      const layer = layers.find(item => item.id === activeLayerId)
+      const selected = layer?.objects?.find(object => object.id === selectedObjectId)
+      if (layer && selected) {
+        const point = clientToDoc(event.clientX, event.clientY)
+        const index = nearestControlPoint(selected, point, 13 / Math.max(0.03, view.zoom))
+        if (index !== undefined) {
+          const before = cloneObjects(layer.objects)
+          if (adjustWidthProfile(selected, index, event.deltaY < 0 ? 0.1 : -0.1) !== undefined) {
+            pushObjectHistory(layer, before, cloneObjects(layer.objects))
+            propsRef.current.onMutated()
+            scheduleRender()
+          }
+          return
+        }
+      }
+    }
     const bounds = viewportRef.current!.getBoundingClientRect()
     const x = event.clientX - bounds.left
     const y = event.clientY - bounds.top
@@ -1118,7 +1139,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     const zoom = clamp(view.zoom * Math.exp(-event.deltaY * 0.0012), 0.03, 8)
     const visualDocX = flipped ? doc.width - docX : docX
     propsRef.current.onViewChange({ zoom, panX: x - visualDocX * zoom, panY: y - docY * zoom })
-  }, [])
+  }, [clientToDoc, pushObjectHistory, scheduleRender])
 
   useEffect(() => {
     const viewport = viewportRef.current

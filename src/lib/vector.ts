@@ -1,4 +1,4 @@
-import { brushRendering, getStrokePathData, renderStroke } from './brushes'
+import { brushRendering, getStrokePathData, renderStroke, widthAt } from './brushes'
 import type { LayerModel, VectorObject } from '../types'
 import { clipToSelection, selectionSvgPath } from './selection'
 import {
@@ -36,7 +36,7 @@ export function renderVectorObject(ctx: CanvasRenderingContext2D, object: Vector
   }
   applyObjectTransform(ctx, object)
   if (object.kind === 'stroke') {
-    renderStroke(ctx, object.points, object.brush, object.color, true, object.pen)
+    renderStroke(ctx, object.points, object.brush, object.color, true, object.pen, false, object.widthProfile)
   } else {
     const path = object.kind === 'shape' ? shapePath(object) : linearPath(object)
     ctx.globalAlpha = object.brush.opacity
@@ -47,7 +47,14 @@ export function renderVectorObject(ctx: CanvasRenderingContext2D, object: Vector
     ctx.lineJoin = 'round'
     if (brushRendering(object.brush).dotwork) ctx.setLineDash([0.1, Math.max(3, object.brush.size * 2.2)])
     if (object.fill && (object.closed || object.kind === 'shape')) ctx.fill(path)
-    else ctx.stroke(path)
+    else if (object.kind === 'path' && Object.keys(object.widthProfile ?? {}).length) {
+      const count = object.closed ? object.points.length : object.points.length - 1
+      for (let index = 0; index < count; index++) {
+        const nextIndex = index + 1 === object.points.length ? 0 : index + 1
+        ctx.lineWidth = object.brush.size * (widthAt(object.widthProfile, index) + widthAt(object.widthProfile, nextIndex)) / 2
+        ctx.stroke(vectorPath(object, index))
+      }
+    } else ctx.stroke(path)
   }
   ctx.restore()
 }
@@ -90,13 +97,23 @@ export function vectorObjectToSvg(object: VectorObject) {
   const opacity = object.brush.opacity
   let markup: string
   if (object.kind === 'stroke' && !brushRendering(object.brush).dotwork) {
-    const d = getStrokePathData(object.points, object.brush, true, object.pen)
+    const d = getStrokePathData(object.points, object.brush, true, object.pen, object.widthProfile)
     markup = `<path d="${d}" fill="${object.color}" fill-opacity="${opacity}" transform="${transform}"/>`
   } else {
-    const d = object.kind === 'shape' ? shapeSvgPath(object) : vectorSvgPath(object)
     const fill = object.fill && (object.closed || object.kind === 'shape') ? object.color : 'none'
     const dash = brushRendering(object.brush).dotwork ? ` stroke-dasharray="0.1 ${Math.max(3, object.brush.size * 2.2)}"` : ''
-    markup = `<path d="${d}" fill="${fill}" stroke="${object.color}" stroke-opacity="${opacity}" stroke-width="${object.brush.size}" stroke-linecap="round" stroke-linejoin="round"${dash} transform="${transform}"/>`
+    if (object.kind === 'path' && Object.keys(object.widthProfile ?? {}).length) {
+      const count = object.closed ? object.points.length : object.points.length - 1
+      const base = object.fill ? `<path d="${vectorSvgPath(object)}" fill="${fill}" stroke="none" transform="${transform}"/>` : ''
+      markup = base + Array.from({ length: count }, (_, index) => {
+        const nextIndex = index + 1 === object.points.length ? 0 : index + 1
+        const width = object.brush.size * (widthAt(object.widthProfile, index) + widthAt(object.widthProfile, nextIndex)) / 2
+        return `<path d="${vectorSvgPath(object, index)}" fill="none" stroke="${object.color}" stroke-opacity="${opacity}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"${dash} transform="${transform}"/>`
+      }).join('')
+    } else {
+      const d = object.kind === 'shape' ? shapeSvgPath(object) : vectorSvgPath(object)
+      markup = `<path d="${d}" fill="${fill}" stroke="${object.color}" stroke-opacity="${opacity}" stroke-width="${object.brush.size}" stroke-linecap="round" stroke-linejoin="round"${dash} transform="${transform}"/>`
+    }
   }
   return wrapVectorClips(markup, object)
 }

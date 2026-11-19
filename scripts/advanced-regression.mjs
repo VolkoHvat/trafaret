@@ -809,6 +809,67 @@ async function s19PathSegments() {
   } finally { await context.close().catch(() => {}) }
 }
 
+// ---------- Scenario 20: per-node width profile + Undo/Redo ----------
+async function s20WidthProfile() {
+  const { context, page, trackers } = await freshContext()
+  try {
+    const box = await canvasBox(page)
+    await page.keyboard.press('p')
+    await sleep(250)
+    for (const [x, y] of [[500, 500], [650, 500], [800, 650]]) {
+      const point = docToClient(box, x, y)
+      await page.mouse.click(point.x, point.y)
+      await sleep(100)
+    }
+    await page.keyboard.press('Enter')
+    await sleep(350)
+    const sampleBefore = await sampleGrid(page)
+    const beforeFile = '/tmp/trafaret-width-before.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), beforeFile)
+    const beforeJson = JSON.parse(await readFile(beforeFile, 'utf8'))
+    const beforePath = beforeJson.layers.find(layer => layer.kind === 'vector')?.objects?.find(object => object.kind === 'path')
+
+    await page.keyboard.press('v')
+    await sleep(250)
+    const middle = docToClient(box, 650, 500)
+    await page.mouse.move(middle.x, middle.y)
+    await page.keyboard.down('Alt')
+    await page.mouse.wheel(0, -240)
+    await page.keyboard.up('Alt')
+    await sleep(350)
+    const sampleAfter = await sampleGrid(page)
+    const afterFile = '/tmp/trafaret-width-after.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), afterFile)
+    const afterJson = JSON.parse(await readFile(afterFile, 'utf8'))
+    const afterPath = afterJson.layers.find(layer => layer.kind === 'vector')?.objects?.find(object => object.id === beforePath.id)
+    const multiplier = afterPath?.widthProfile?.[1]
+
+    await page.keyboard.press('Control+z')
+    await sleep(350)
+    const sampleUndone = await sampleGrid(page)
+    await page.keyboard.press('Control+Shift+z')
+    await sleep(350)
+    const redoFile = '/tmp/trafaret-width-redo.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), redoFile)
+    const redoJson = JSON.parse(await readFile(redoFile, 'utf8'))
+    const redoPath = redoJson.layers.find(layer => layer.kind === 'vector')?.objects?.find(object => object.id === beforePath.id)
+
+    const svgFile = '/tmp/trafaret-width-profile.svg'
+    await page.click('header button:has-text("Экспорт")')
+    await downloadTo(page, () => page.click('button.export-option:has-text("Векторный SVG")'), svgFile)
+    const svg = await readFile(svgFile, 'utf8')
+    const widths = [...svg.matchAll(/stroke-width="([\d.]+)"/g)].map(match => Number(match[1]))
+    const err = errorSummary(trackers)
+    const undoExact = exactEqual(sampleUndone, sampleBefore)
+    const svgHasProfileWidth = widths.some(width => width > beforePath.brush.size)
+    return {
+      status: multiplier > 1 && afterPath.brush.size === beforePath.brush.size && undoExact
+        && redoPath?.widthProfile?.[1] === multiplier && svgHasProfileWidth && diffPixels(sampleBefore, sampleAfter) > 0 && err.clean ? 'PASS' : 'FAIL',
+      evidence: { multiplier, undoExact, redoMultiplier: redoPath?.widthProfile?.[1], widths, ...err },
+    }
+  } finally { await context.close().catch(() => {}) }
+}
+
 // ---------- main ----------
 const started = Date.now()
 console.log(`[audit] production dist=${distDir}`)
@@ -826,6 +887,7 @@ const scenarios = [
   ['17-print-color-modes', 'Color, grayscale and stencil print modes with exact 100mm page size', s17PrintColorModes],
   ['18-bezier-handles', 'Bezier handle creation, persistence, Undo/Redo and cubic SVG output', s18BezierHandles],
   ['19-path-segments', 'Alt+click inserts a path node and double-click deletes it with exact Undo', s19PathSegments],
+  ['20-width-profile', 'Alt+wheel changes per-node width profile with Undo/Redo and SVG parity', s20WidthProfile],
 ]
 
 const report = {

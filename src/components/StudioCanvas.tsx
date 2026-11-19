@@ -28,6 +28,7 @@ export interface StudioHandle {
   deleteSelectedObject: () => void
   setSelectedObjectSize: (size: number) => void
   commitPen: (closed?: boolean) => void
+  addPath: (points: StrokePoint[], closed: boolean, color: string, brush?: Partial<BrushConfig>) => boolean
   cancelDraft: () => void
   fitView: () => void
   exportImage: (transparent: boolean, stencil: boolean, onlyActive?: boolean) => Promise<Blob>
@@ -527,6 +528,23 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     scheduleRender()
   }, [pushObjectHistory, scheduleRender])
 
+  const addPath = useCallback((points: StrokePoint[], closed: boolean, color: string, brushPatch?: Partial<BrushConfig>) => {
+    const { layers, activeLayerId, brush, doc, symmetry, radialCount, selection } = propsRef.current
+    const layer = layers.find(item => item.id === activeLayerId)
+    if (points.length < 2 || !layer || layer.kind !== 'vector' || layer.locked) return false
+    const object: VectorObject = {
+      id: vectorId(), kind: 'path', points: copyPoints(points), brush: { ...brush, ...brushPatch }, color,
+      pen: false, closed, clips: selectionClips(selection), transform: defaultVectorTransform(),
+    }
+    const before = cloneObjects(layer.objects)
+    const additions = symmetricObjects(object, doc, symmetry, radialCount, vectorId)
+    pushObjectHistory(layer, before, [...before, ...additions])
+    propsRef.current.onSelectObject(object.id)
+    propsRef.current.onMutated()
+    scheduleRender()
+    return true
+  }, [pushObjectHistory, scheduleRender])
+
   useImperativeHandle(ref, () => ({
     undo: () => {
       if (busy()) return
@@ -546,6 +564,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     deleteSelectedObject,
     setSelectedObjectSize,
     commitPen,
+    addPath,
     cancelDraft: () => {
       currentRef.current = null
       objectDragRef.current = null
@@ -618,7 +637,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       return analyzeArtwork(doc, artworkLayers, image)
     },
     historyPixels: () => historyRef.current.size,
-  }), [clearActive, commitPen, composeTo, deleteSelectedObject, releaseBuffer, restoreHistory, scheduleRender, setSelectedObjectSize, updateHistoryState])
+  }), [addPath, clearActive, commitPen, composeTo, deleteSelectedObject, releaseBuffer, restoreHistory, scheduleRender, setSelectedObjectSize, updateHistoryState])
 
   const clientToDoc = useCallback((clientX: number, clientY: number): StrokePoint => {
     const canvas = canvasRef.current!

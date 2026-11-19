@@ -1113,6 +1113,40 @@ async function s24IccProfiles() {
   } finally { await context.close().catch(() => {}) }
 }
 
+// ---------- Scenario 25: declarative plugin API ----------
+async function s25PluginApi() {
+  const { context, page, trackers } = await freshContext()
+  try {
+    await page.click('button[aria-label="Добавить векторный слой"]')
+    await sleep(250)
+    const manifest = {
+      id: 'test-plugin', name: 'Test Plugin', version: 1,
+      operations: [
+        { type: 'set-brush', brush: { size: 18 } },
+        { type: 'set-symmetry', mode: 'vertical' },
+        { type: 'add-path', points: [[500, 500, 0.5], [650, 550, 0.5]], color: '#171914' },
+      ],
+    }
+    await page.click('header button:has-text("Экспорт")')
+    const chooserPromise = page.waitForEvent('filechooser')
+    await page.click('button.export-option:has-text("Импортировать плагин")')
+    const chooser = await chooserPromise
+    await chooser.setFiles({ name: 'plugin.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(manifest)) })
+    await page.waitForSelector('.toast:has-text("Test Plugin")', { timeout: 15000 })
+    await page.keyboard.press('Escape')
+    const size = await page.locator('label.control-slider:has-text("Размер") input').inputValue()
+    const symmetry = await page.locator('.document-section .segmented-control.three button.active').first().textContent()
+    const projectFile = '/tmp/trafaret-plugin.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), projectFile)
+    const project = JSON.parse(await readFile(projectFile, 'utf8'))
+    const objects = project.layers.find(layer => layer.kind === 'vector')?.objects ?? []
+    const err = errorSummary(trackers)
+    const pass = size === '18' && symmetry === 'Ось' && objects.length === 2
+      && objects.every(object => object.kind === 'path' && object.brush.size === 18) && err.clean
+    return { status: pass ? 'PASS' : 'FAIL', evidence: { size, symmetry, objectCount: objects.length, objects, ...err } }
+  } finally { await context.close().catch(() => {}) }
+}
+
 // ---------- main ----------
 const started = Date.now()
 console.log(`[audit] production dist=${distDir}`)
@@ -1135,6 +1169,7 @@ const scenarios = [
   ['22-psd-roundtrip', 'Flattened PSD export/import preserves pixels and creates an image layer', s22PsdRoundtrip],
   ['23-abr-import', 'ABR descriptor preset imports as a custom brush with correct size', s23AbrImport],
   ['24-icc-profiles', 'sRGB and Display P3 PNG exports include valid ICC metadata and converted pixels', s24IccProfiles],
+  ['25-plugin-api', 'Declarative plugin applies brush, symmetry and a mirrored path without executing code', s25PluginApi],
 ]
 
 const report = {

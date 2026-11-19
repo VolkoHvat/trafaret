@@ -754,6 +754,61 @@ async function s18BezierHandles() {
   } finally { await context.close().catch(() => {}) }
 }
 
+// ---------- Scenario 19: insert/delete path nodes with exact Undo ----------
+async function s19PathSegments() {
+  const { context, page, trackers } = await freshContext()
+  try {
+    const box = await canvasBox(page)
+    await page.keyboard.press('p')
+    await sleep(250)
+    for (const [x, y] of [[500, 500], [650, 500], [800, 650]]) {
+      const point = docToClient(box, x, y)
+      await page.mouse.click(point.x, point.y)
+      await sleep(100)
+    }
+    await page.keyboard.press('Enter')
+    await sleep(350)
+    const sampleBefore = await sampleGrid(page)
+    const beforeFile = '/tmp/trafaret-segments-before.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), beforeFile)
+    const beforeJson = JSON.parse(await readFile(beforeFile, 'utf8'))
+    const beforePath = beforeJson.layers.find(layer => layer.kind === 'vector')?.objects?.find(object => object.kind === 'path')
+
+    await page.keyboard.press('v')
+    await sleep(250)
+    const insertedPoint = docToClient(box, 575, 500)
+    await page.keyboard.down('Alt')
+    await page.mouse.click(insertedPoint.x, insertedPoint.y)
+    await page.keyboard.up('Alt')
+    await sleep(350)
+    const insertFile = '/tmp/trafaret-segments-insert.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), insertFile)
+    const insertJson = JSON.parse(await readFile(insertFile, 'utf8'))
+    const insertedPath = insertJson.layers.find(layer => layer.kind === 'vector')?.objects?.find(object => object.id === beforePath.id)
+    const inserted = insertedPath?.points?.length === 4 && insertedPath.points[1][0] === 575 && insertedPath.points[1][1] === 500
+
+    await page.mouse.dblclick(insertedPoint.x, insertedPoint.y)
+    await sleep(350)
+    const deleteFile = '/tmp/trafaret-segments-delete.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), deleteFile)
+    const deleteJson = JSON.parse(await readFile(deleteFile, 'utf8'))
+    const deletedPath = deleteJson.layers.find(layer => layer.kind === 'vector')?.objects?.find(object => object.id === beforePath.id)
+    const deleted = JSON.stringify(deletedPath?.points) === JSON.stringify(beforePath.points)
+
+    await page.keyboard.press('Control+z')
+    await sleep(250)
+    await page.keyboard.press('Control+z')
+    await sleep(350)
+    const sampleUndone = await sampleGrid(page)
+    const err = errorSummary(trackers)
+    const undoExact = exactEqual(sampleUndone, sampleBefore)
+    return {
+      status: inserted && deleted && undoExact && err.clean ? 'PASS' : 'FAIL',
+      evidence: { inserted, deleted, undoExact, insertedPoints: insertedPath?.points, ...err },
+    }
+  } finally { await context.close().catch(() => {}) }
+}
+
 // ---------- main ----------
 const started = Date.now()
 console.log(`[audit] production dist=${distDir}`)
@@ -770,6 +825,7 @@ const scenarios = [
   ['16-nondestructive-filters', 'Raster and vector filters preserve sources and survive clean reload', s16NondestructiveFilters],
   ['17-print-color-modes', 'Color, grayscale and stencil print modes with exact 100mm page size', s17PrintColorModes],
   ['18-bezier-handles', 'Bezier handle creation, persistence, Undo/Redo and cubic SVG output', s18BezierHandles],
+  ['19-path-segments', 'Alt+click inserts a path node and double-click deletes it with exact Undo', s19PathSegments],
 ]
 
 const report = {

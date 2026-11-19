@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { VectorObject } from '../types'
 import {
-  applyObjectTransform, baseObjectBounds, localPoint, moveControlHandle, moveControlPoint,
-  nearestControlHandle, nearestControlPoint, objectOrigin, objectSvgTransform, shapePath,
+  applyObjectTransform, baseObjectBounds, insertControlPoint, localPoint, moveControlHandle, moveControlPoint,
+  nearestControlHandle, nearestControlPoint, objectOrigin, objectSvgTransform, removeControlPoint, shapePath,
   shapeSvgPath, supportsControlPoints, vectorPath, vectorSvgPath, worldPoint,
 } from './geometry'
 
@@ -141,5 +141,29 @@ describe('Bezier paths', () => {
     expect(moveControlHandle(object, 0, 'out', [160, 50, 0.5])).toBe(true)
     expect(object.handles[0].out).toEqual([160, 50])
     expect(nearestControlHandle(object, [160, 50, 0.5], 5)).toEqual({ index: 0, side: 'out' })
+  })
+})
+
+describe('path segments', () => {
+  it('inserts a node with de Casteljau handles and removes nodes with remapping', () => {
+    const object = arcObject()
+    object.kind = 'path'
+    object.shape = undefined
+    object.points = [[100, 100, 0.5], [200, 100, 0.5], [300, 200, 0.5]]
+    object.handles = { 0: { out: [150, 20] }, 1: { in: [180, 40] } }
+
+    expect(insertControlPoint(object, [150, 60, 0.5], 50)).toBe(1)
+    expect(object.points[1]).toEqual([150, 100, 0.5])
+    expect(object.handles[0].out).toEqual([125, 60])
+    expect(object.handles[1].in).toEqual([145, 45])
+    expect(object.handles[1].out).toEqual([177.5, 50])
+    expect(object.handles[2].in).toEqual([190, 70])
+    expect(insertControlPoint(object, [1000, 1000, 0.5], 10)).toBeUndefined()
+
+    expect(removeControlPoint(object, 1)).toBe(true)
+    expect(object.points).toHaveLength(3)
+    expect(removeControlPoint(object, 1)).toBe(true)
+    expect(object.points).toHaveLength(2)
+    expect(removeControlPoint(object, 0)).toBe(false)
   })
 })

@@ -13,8 +13,8 @@ import { HistoryStore } from '../lib/history'
 import { decodeRasterImage, makeRasterHistoryEntry, type RasterHistoryEntry } from '../lib/raster-history'
 import { copyPoints, StrokeSession, symmetricObjects } from '../lib/stroke-session'
 import {
-  defaultVectorTransform, ensureObjectOrigin, moveControlHandle, moveControlPoint,
-  nearestControlHandle, nearestControlPoint, objectBounds, objectOrigin, supportsControlPoints, worldPoint,
+  defaultVectorTransform, ensureObjectOrigin, insertControlPoint, moveControlHandle, moveControlPoint,
+  nearestControlHandle, nearestControlPoint, objectBounds, objectOrigin, removeControlPoint, supportsControlPoints, worldPoint,
 } from '../lib/geometry'
 import {
   cloneObjects, hitVectorObject, renderVectorLayer, renderVectorObject, vectorId,
@@ -708,6 +708,12 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
               if (next) moveControlHandle(selected, nearest + 1, 'in', next)
             } else mode = 'node'
           }
+          if (mode !== 'handle' && mode !== 'node' && event.altKey && selected.kind === 'path') {
+            const inserted = insertControlPoint(selected, point, tolerance)
+            if (inserted !== undefined) {
+              mode = 'node'; nodeIndex = inserted
+            }
+          }
         }
       }
     }
@@ -768,6 +774,24 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       pushObjectHistory(layer, drag.before, after)
       propsRef.current.onMutated()
     }
+    scheduleRender()
+  }
+
+  const deleteNodeAt = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const { layers, activeLayerId, selectedObjectId, view } = propsRef.current
+    const layer = layers.find(item => item.id === activeLayerId)
+    const selected = layer?.objects?.find(object => object.id === selectedObjectId)
+    if (!layer || layer.locked || selected?.kind !== 'path') return
+    const point = clientToDoc(event.clientX, event.clientY)
+    const index = nearestControlPoint(selected, point, 13 / Math.max(0.03, view.zoom))
+    if (index === undefined) return
+    const before = cloneObjects(layer.objects)
+    if (!removeControlPoint(selected, index)) {
+      propsRef.current.onNotice('У пути должно остаться минимум два узла, у замкнутого — три')
+      return
+    }
+    pushObjectHistory(layer, before, cloneObjects(layer.objects))
+    propsRef.current.onMutated()
     scheduleRender()
   }
 
@@ -1122,7 +1146,10 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
-          onDoubleClick={event => { if (propsRef.current.tool === 'pen') { event.preventDefault(); commitPen(false) } }}
+          onDoubleClick={event => {
+            if (propsRef.current.tool === 'pen') { event.preventDefault(); commitPen(false) }
+            else if (propsRef.current.tool === 'object') { event.preventDefault(); deleteNodeAt(event) }
+          }}
           aria-label="Холст профессионального tattoo-линворка"
           tabIndex={0}
         />

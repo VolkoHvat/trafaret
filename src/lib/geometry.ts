@@ -154,6 +154,67 @@ export function nearestControlPoint(object: VectorObject, point: VectorObject['p
   return index
 }
 
+function segmentProjection(a: GeometryPoint, b: GeometryPoint, point: GeometryPoint) {
+  const dx = b[0] - a[0], dy = b[1] - a[1]
+  const lengthSquared = dx * dx + dy * dy
+  const t = lengthSquared ? Math.max(0, Math.min(1, ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / lengthSquared)) : 0
+  const x = a[0] + dx * t, y = a[1] + dy * t
+  return { t, x, y, distance: Math.hypot(point[0] - x, point[1] - y) }
+}
+
+function splitCubic(a: GeometryPoint, out: GeometryPoint, incoming: GeometryPoint, b: GeometryPoint, t: number) {
+  const mix = (p: GeometryPoint, q: GeometryPoint): [number, number] => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]
+  const aOut = mix(a, out), outIn = mix(out, incoming), inB = mix(incoming, b)
+  const leftIn = mix(aOut, outIn), rightOut = mix(outIn, inB)
+  return { aOut, leftIn, rightOut, inB }
+}
+
+export function insertControlPoint(object: VectorObject, point: VectorObject['points'][number], tolerance: number): number | undefined {
+  if (object.kind !== 'path' || object.points.length < 2) return undefined
+  const local = localPoint(point, object)
+  let nearest: { index: number; t: number; x: number; y: number; distance: number } | undefined
+  for (const [a, b, index] of pathSegments(object)) {
+    const projection = segmentProjection(a, b, local)
+    if (!nearest || projection.distance < nearest.distance) nearest = { index, ...projection }
+  }
+  if (!nearest || nearest.distance > tolerance / Math.abs(object.transform.scale)) return undefined
+  const index = nearest.index
+  const nextIndex = index + 1
+  const oldHandles = object.handles ?? {}
+  const out = oldHandles[index]?.out
+  const incoming = oldHandles[nextIndex]?.in
+  const a = object.points[index], b = object.points[nextIndex]
+  const remapped: VectorObject['handles'] = {}
+  for (const [key, handles] of Object.entries(oldHandles)) {
+    const oldIndex = Number(key)
+    if (oldIndex < index) remapped[oldIndex] = handles
+    else if (oldIndex > nextIndex) remapped[oldIndex + 1] = handles
+  }
+  if (out || incoming) {
+    const split = splitCubic(a, out ?? a, incoming ?? b, b, nearest.t)
+    remapped[index] = { ...remapped[index], out: split.aOut }
+    remapped[nextIndex] = { ...remapped[nextIndex], in: split.leftIn, out: split.rightOut }
+    remapped[nextIndex + 1] = { ...remapped[nextIndex + 1], in: split.inB }
+  }
+  object.points.splice(nextIndex, 0, [nearest.x, nearest.y, a[2] + (b[2] - a[2]) * nearest.t])
+  object.handles = remapped
+  return nextIndex
+}
+
+export function removeControlPoint(object: VectorObject, index: number): boolean {
+  const minimum = object.closed ? 3 : 2
+  if (object.kind !== 'path' || object.points.length <= minimum || !object.points[index]) return false
+  object.points.splice(index, 1)
+  const remapped: VectorObject['handles'] = {}
+  for (const [key, handles] of Object.entries(object.handles ?? {})) {
+    const oldIndex = Number(key)
+    if (oldIndex < index) remapped[oldIndex] = handles
+    else if (oldIndex > index) remapped[oldIndex - 1] = handles
+  }
+  object.handles = remapped
+  return true
+}
+
 export function applyObjectTransform(ctx: CanvasRenderingContext2D, object: VectorObject) {
   const { x: cx, y: cy } = objectOrigin(object)
   ctx.translate(cx + object.transform.x, cy + object.transform.y)

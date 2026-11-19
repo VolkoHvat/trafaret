@@ -1279,6 +1279,32 @@ async function s27VectorDuplication() {
   } finally { await context.close().catch(() => {}) }
 }
 
+// ---------- Scenario 28: layer rename + project/reload persistence ----------
+async function s28LayerRename() {
+  const { context, page, trackers } = await freshContext()
+  try {
+    const nameInput = page.locator('.layer-settings label.text-field:has-text("Имя слоя") input')
+    await nameInput.fill('  Финальный лайн  ')
+    await nameInput.press('Tab')
+    await sleep(350)
+    const projectFile = '/tmp/trafaret-layer-rename.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), projectFile)
+    const project = JSON.parse(await readFile(projectFile, 'utf8'))
+    const savedName = project.layers.find(layer => layer.id === project.activeLayerId)?.name
+    const rowName = await page.locator('.layer-row.active .layer-name').textContent()
+
+    await sleep(1300)
+    await page.reload({ waitUntil: 'load', timeout: 30000 })
+    await page.waitForSelector('canvas.drawing-canvas', { timeout: 15000 })
+    await page.waitForSelector('.loading-cover', { state: 'detached', timeout: 15000 }).catch(() => {})
+    await sleep(500)
+    const restoredName = await page.locator('.layer-settings label.text-field:has-text("Имя слоя") input').inputValue()
+    const err = errorSummary(trackers)
+    const pass = savedName === 'Финальный лайн' && rowName === 'Финальный лайн' && restoredName === savedName && err.clean
+    return { status: pass ? 'PASS' : 'FAIL', evidence: { savedName, rowName, restoredName, ...err } }
+  } finally { await context.close().catch(() => {}) }
+}
+
 // ---------- main ----------
 const started = Date.now()
 console.log(`[audit] production dist=${distDir}`)
@@ -1304,6 +1330,7 @@ const scenarios = [
   ['25-plugin-api', 'Declarative plugin applies brush, symmetry and a mirrored path without executing code', s25PluginApi],
   ['26-path-simplify', 'RDP simplifies 30 collinear pen nodes to two endpoints with exact Undo/Redo', s26PathSimplify],
   ['27-vector-duplication', 'Selected vector duplication uses fresh ids, a 20px offset and exact Undo/Redo; layer copies also renew ids', s27VectorDuplication],
+  ['28-layer-rename', 'Layer name trims on blur and persists in the project and after a clean reload', s28LayerRename],
 ]
 
 const report = {

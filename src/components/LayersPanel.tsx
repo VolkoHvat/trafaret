@@ -68,6 +68,9 @@ export function LayersPanel({
       </div>
       {active && (
         <div className="layer-settings">
+          <label className="text-field"><span>Имя слоя</span><input value={active.name} maxLength={80}
+            onChange={event => update(active.id, { name: event.target.value })}
+            onBlur={() => update(active.id, { name: active.name.trim() || 'Слой' })} /></label>
           <Slider label="Непрозрачность слоя" min={0.05} max={1} step={0.05} value={active.opacity} onChange={opacity => update(active.id, { opacity })} />
           <label className="select-field">
             <span>Смешивание</span>

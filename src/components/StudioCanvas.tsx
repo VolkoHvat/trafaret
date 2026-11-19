@@ -13,8 +13,8 @@ import { HistoryStore } from '../lib/history'
 import { decodeRasterImage, makeRasterHistoryEntry, type RasterHistoryEntry } from '../lib/raster-history'
 import { copyPoints, StrokeSession, symmetricObjects } from '../lib/stroke-session'
 import {
-  defaultVectorTransform, ensureObjectOrigin, moveControlPoint, nearestControlPoint,
-  objectBounds, objectOrigin, supportsControlPoints, worldPoint,
+  defaultVectorTransform, ensureObjectOrigin, moveControlHandle, moveControlPoint,
+  nearestControlHandle, nearestControlPoint, objectBounds, objectOrigin, supportsControlPoints, worldPoint,
 } from '../lib/geometry'
 import {
   cloneObjects, hitVectorObject, renderVectorLayer, renderVectorObject, vectorId,
@@ -84,13 +84,14 @@ interface RasterHistoryInput {
 }
 type HistoryInput = RasterHistoryInput | ObjectHistory
 
-type ObjectDragMode = 'move' | 'scale' | 'rotate' | 'node'
+type ObjectDragMode = 'move' | 'scale' | 'rotate' | 'node' | 'handle'
 interface ObjectDrag {
   pointerId: number
   layerId: string
   objectId: string
   mode: ObjectDragMode
   nodeIndex?: number
+  handleSide?: 'in' | 'out'
   start: StrokePoint
   before: VectorObject[]
   original: VectorObject
@@ -278,6 +279,19 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
           const [x, y] = worldPoint(point, selected)
           ctx.beginPath(); ctx.arc(x, y, 4.5 * unit, 0, Math.PI * 2); ctx.fill()
           ctx.stroke()
+        }
+        for (const [key, handles] of Object.entries(selected.handles ?? {})) {
+          const node = selected.points[Number(key)]
+          if (!node) continue
+          const [nodeX, nodeY] = worldPoint(node, selected)
+          for (const side of ['in', 'out'] as const) {
+            const control = handles[side]
+            if (!control) continue
+            const [x, y] = worldPoint([control[0], control[1], 0], selected)
+            ctx.beginPath(); ctx.moveTo(nodeX, nodeY); ctx.lineTo(x, y); ctx.stroke()
+            ctx.beginPath(); ctx.arc(x, y, 3.5 * unit, 0, Math.PI * 2); ctx.fill()
+            ctx.stroke()
+          }
         }
       }
       ctx.restore()
@@ -666,11 +680,13 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     const layer = layers.find(item => item.id === activeLayerId)
     if (!layer || layer.kind !== 'vector' || layer.locked) return
     const objects = layer.objects ?? []
+    const before = cloneObjects(objects)
     objects.forEach(ensureObjectOrigin)
     const selected = objects.find(object => object.id === selectedObjectId)
     let object = selected
     let mode: ObjectDragMode = 'move'
     let nodeIndex: number | undefined
+    let handleSide: 'in' | 'out' | undefined
     const tolerance = 13 / Math.max(0.03, view.zoom)
     if (selected) {
       const bounds = objectBounds(selected)
@@ -678,9 +694,20 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       if (Math.hypot(point[0] - bounds.maxX, point[1] - bounds.maxY) <= tolerance) mode = 'scale'
       else if (Math.hypot(point[0] - rotateX, point[1] - rotateY) <= tolerance) mode = 'rotate'
       else if (supportsControlPoints(selected)) {
-        const nearest = nearestControlPoint(selected, point, tolerance)
-        if (nearest !== undefined) {
-          mode = 'node'; nodeIndex = nearest
+        const handle = nearestControlHandle(selected, point, tolerance)
+        if (handle) {
+          mode = 'handle'; nodeIndex = handle.index; handleSide = handle.side
+        } else {
+          const nearest = nearestControlPoint(selected, point, tolerance)
+          if (nearest !== undefined) {
+            nodeIndex = nearest
+            if (event.altKey && selected.kind === 'path') {
+              mode = 'handle'; handleSide = 'out'
+              moveControlHandle(selected, nearest, 'out', selected.points[nearest])
+              const next = selected.points[nearest + 1]
+              if (next) moveControlHandle(selected, nearest + 1, 'in', next)
+            } else mode = 'node'
+          }
         }
       }
     }
@@ -698,8 +725,8 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     const centerX = origin.x + object.transform.x
     const centerY = origin.y + object.transform.y
     objectDragRef.current = {
-      pointerId: event.pointerId, layerId: layer.id, objectId: object.id, mode, nodeIndex,
-      start: point, before: cloneObjects(objects), original: JSON.parse(JSON.stringify(object)) as VectorObject,
+      pointerId: event.pointerId, layerId: layer.id, objectId: object.id, mode, nodeIndex, handleSide,
+      start: point, before, original: JSON.parse(JSON.stringify(object)) as VectorObject,
       centerX, centerY,
       startDistance: Math.max(1, Math.hypot(point[0] - centerX, point[1] - centerY)),
       startAngle: Math.atan2(point[1] - centerY, point[0] - centerX),
@@ -723,6 +750,8 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       object.transform.rotation = drag.original.transform.rotation + (angle - drag.startAngle) * 180 / Math.PI
     } else if (drag.mode === 'node' && drag.nodeIndex !== undefined) {
       moveControlPoint(object, drag.nodeIndex, point)
+    } else if (drag.mode === 'handle' && drag.nodeIndex !== undefined && drag.handleSide) {
+      moveControlHandle(object, drag.nodeIndex, drag.handleSide, point)
     }
     renderVectorLayer(layer)
     scheduleRender()

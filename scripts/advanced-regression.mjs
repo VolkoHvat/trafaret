@@ -688,6 +688,72 @@ async function s17PrintColorModes() {
   } finally { await context.close().catch(() => {}) }
 }
 
+// ---------- Scenario 18: Bezier handles, persistence, Undo/Redo and SVG ----------
+async function s18BezierHandles() {
+  const { context, page, trackers } = await freshContext()
+  try {
+    const box = await canvasBox(page)
+    await page.keyboard.press('p')
+    await sleep(250)
+    for (const [x, y] of [[500, 500], [650, 500], [800, 650]]) {
+      const point = docToClient(box, x, y)
+      await page.mouse.click(point.x, point.y)
+      await sleep(100)
+    }
+    await page.keyboard.press('Enter')
+    await sleep(350)
+    const sampleBefore = await sampleGrid(page)
+    const beforeFile = '/tmp/trafaret-bezier-before.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), beforeFile)
+    const beforeJson = JSON.parse(await readFile(beforeFile, 'utf8'))
+    const beforePath = beforeJson.layers.find(layer => layer.kind === 'vector')?.objects?.find(object => object.kind === 'path')
+
+    await page.keyboard.press('v')
+    await sleep(250)
+    const from = docToClient(box, 650, 500)
+    const to = docToClient(box, 650, 300)
+    await page.keyboard.down('Alt')
+    await page.mouse.move(from.x, from.y)
+    await page.mouse.down()
+    await page.mouse.move(to.x, to.y, { steps: 8 })
+    await page.mouse.up()
+    await page.keyboard.up('Alt')
+    await sleep(350)
+    const sampleAfter = await sampleGrid(page)
+    const afterFile = '/tmp/trafaret-bezier-after.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), afterFile)
+    const afterJson = JSON.parse(await readFile(afterFile, 'utf8'))
+    const afterPath = afterJson.layers.find(layer => layer.kind === 'vector')?.objects?.find(object => object.id === beforePath.id)
+    const outHandle = afterPath?.handles?.[1]?.out
+    const inHandle = afterPath?.handles?.[2]?.in
+
+    await page.keyboard.press('Control+z')
+    await sleep(350)
+    const sampleUndone = await sampleGrid(page)
+    await page.keyboard.press('Control+Shift+z')
+    await sleep(350)
+    const redoFile = '/tmp/trafaret-bezier-redo.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), redoFile)
+    const redoJson = JSON.parse(await readFile(redoFile, 'utf8'))
+    const redoPath = redoJson.layers.find(layer => layer.kind === 'vector')?.objects?.find(object => object.id === beforePath.id)
+
+    const svgFile = '/tmp/trafaret-bezier.svg'
+    await page.click('header button:has-text("Экспорт")')
+    await downloadTo(page, () => page.click('button.export-option:has-text("Векторный SVG")'), svgFile)
+    const svg = await readFile(svgFile, 'utf8')
+    const err = errorSummary(trackers)
+    const handlesCreated = outHandle?.[0] === 650 && outHandle?.[1] === 300
+      && inHandle?.[0] === 800 && inHandle?.[1] === 650
+    const undoExact = exactEqual(sampleUndone, sampleBefore)
+    const redoHandles = redoPath?.handles?.[1]?.out?.[1] === 300 && redoPath?.handles?.[2]?.in?.[1] === 650
+    const svgHasBezier = svg.includes(' C')
+    return {
+      status: handlesCreated && undoExact && redoHandles && svgHasBezier && diffPixels(sampleBefore, sampleAfter) > 0 && err.clean ? 'PASS' : 'FAIL',
+      evidence: { handlesCreated, outHandle, inHandle, undoExact, redoHandles, svgHasBezier, ...err },
+    }
+  } finally { await context.close().catch(() => {}) }
+}
+
 // ---------- main ----------
 const started = Date.now()
 console.log(`[audit] production dist=${distDir}`)
@@ -703,6 +769,7 @@ const scenarios = [
   ['15-crash-recovery', 'Interrupted pagehide offers recovery; restored pixels and clean reload are exact', s15CrashRecovery],
   ['16-nondestructive-filters', 'Raster and vector filters preserve sources and survive clean reload', s16NondestructiveFilters],
   ['17-print-color-modes', 'Color, grayscale and stencil print modes with exact 100mm page size', s17PrintColorModes],
+  ['18-bezier-handles', 'Bezier handle creation, persistence, Undo/Redo and cubic SVG output', s18BezierHandles],
 ]
 
 const report = {

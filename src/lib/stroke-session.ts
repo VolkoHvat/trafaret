@@ -25,12 +25,27 @@ function symmetricPointSets(points: StrokePoint[], doc: DocModel, mode: Symmetry
   return sets
 }
 
+function symmetricHandles(object: VectorObject, doc: DocModel, mode: SymmetryMode, radialCount: number, setIndex: number) {
+  if (!object.handles) return undefined
+  const angle = setIndex * Math.PI * 2 / radialCount
+  const mapPoint = (point: [number, number]): [number, number] => {
+    if (mode === 'vertical') return [doc.width - point[0], point[1]]
+    const rotated = rotatePoint([point[0], point[1], 0], doc.width / 2, doc.height / 2, angle)
+    return [rotated[0], rotated[1]]
+  }
+  return Object.fromEntries(Object.entries(object.handles).map(([key, handles]) => [key, {
+    in: handles.in && mapPoint(handles.in),
+    out: handles.out && mapPoint(handles.out),
+  }]))
+}
+
 export function symmetricObjects(object: VectorObject, doc: DocModel, mode: SymmetryMode, radialCount: number, idFactory: () => string) {
   const sets = symmetricPointSets(object.points, doc, mode, radialCount)
   return sets.map((points, index) => ensureObjectOrigin({
     ...object,
     id: index === 0 ? object.id : idFactory(),
     points: copyPoints(points),
+    handles: index === 0 ? object.handles : symmetricHandles(object, doc, mode, radialCount, index),
     origin: undefined,
     brush: { ...object.brush },
     transform: defaultVectorTransform(),

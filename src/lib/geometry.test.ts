@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { VectorObject } from '../types'
 import {
-  applyObjectTransform, baseObjectBounds, localPoint, moveControlPoint, nearestControlPoint,
-  objectOrigin, objectSvgTransform, shapePath, shapeSvgPath, supportsControlPoints, worldPoint,
+  applyObjectTransform, baseObjectBounds, localPoint, moveControlHandle, moveControlPoint,
+  nearestControlHandle, nearestControlPoint, objectOrigin, objectSvgTransform, shapePath,
+  shapeSvgPath, supportsControlPoints, vectorPath, vectorSvgPath, worldPoint,
 } from './geometry'
 
 function arcObject(): VectorObject {
@@ -108,5 +109,37 @@ describe('object geometry', () => {
     object.shape = 'arc'
     expect(supportsControlPoints(object)).toBe(false)
     expect(moveControlPoint(object, 1, target)).toBe(false)
+  })
+})
+
+describe('Bezier paths', () => {
+  it('renders cubic segments identically and includes handles in bounds', () => {
+    class FakePath2D {
+      moveTo = vi.fn()
+      lineTo = vi.fn()
+      bezierCurveTo = vi.fn()
+      closePath = vi.fn()
+      rect = vi.fn()
+      ellipse = vi.fn()
+    }
+    vi.stubGlobal('Path2D', FakePath2D)
+    const object = arcObject()
+    object.kind = 'path'
+    object.shape = undefined
+    object.points = [[100, 100, 0.5], [200, 100, 0.5], [300, 200, 0.5]]
+    object.handles = { 0: { out: [150, 20] }, 1: { in: [180, 40] } }
+
+    const path = vectorPath(object) as unknown as FakePath2D
+    const svg = vectorSvgPath(object)
+
+    expect(path.bezierCurveTo).toHaveBeenCalledWith(150, 20, 180, 40, 200, 100)
+    expect(svg).toContain('C150.00,20.00 180.00,40.00 200.00,100.00')
+    expect(baseObjectBounds(object).minY).toBe(10)
+
+    expect(moveControlPoint(object, 0, [110, 120, 0.5])).toBe(true)
+    expect(object.handles[0].out).toEqual([160, 40])
+    expect(moveControlHandle(object, 0, 'out', [160, 50, 0.5])).toBe(true)
+    expect(object.handles[0].out).toEqual([160, 50])
+    expect(nearestControlHandle(object, [160, 50, 0.5], 5)).toEqual({ index: 0, side: 'out' })
   })
 })

@@ -44,6 +44,11 @@ export interface VectorTransform {
   rotation: number
 }
 
+export interface ControlHandle {
+  in?: [number, number]
+  out?: [number, number]
+}
+
 export interface VectorObject {
   id: string
   kind: 'stroke' | 'path' | 'shape'
@@ -56,6 +61,7 @@ export interface VectorObject {
   fill?: boolean
   angles?: [number, number]
   origin?: { x: number; y: number }
+  handles?: Record<number, ControlHandle>
   clips?: SelectionModel[]
   transform: VectorTransform
 }

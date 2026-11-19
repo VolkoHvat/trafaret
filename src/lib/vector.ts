@@ -3,7 +3,7 @@ import type { LayerModel, VectorObject } from '../types'
 import { clipToSelection, selectionSvgPath } from './selection'
 import {
   applyObjectTransform, ensureObjectOrigin, objectBounds, objectSvgTransform,
-  pointsToPath, shapePath, shapeSvgPath,
+  shapePath, shapeSvgPath, vectorPath, vectorSvgPath,
 } from './geometry'
 
 export const vectorId = () => `v-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
@@ -26,13 +26,7 @@ export const cloneObjects = (objects: VectorObject[] = []) => {
 }
 
 function linearPath(object: VectorObject) {
-  const path = new Path2D()
-  object.points.forEach((point, index) => {
-    if (index === 0) path.moveTo(point[0], point[1])
-    else path.lineTo(point[0], point[1])
-  })
-  if (object.closed) path.closePath()
-  return path
+  return vectorPath(object)
 }
 
 export function renderVectorObject(ctx: CanvasRenderingContext2D, object: VectorObject) {
@@ -99,7 +93,7 @@ export function vectorObjectToSvg(object: VectorObject) {
     const d = getStrokePathData(object.points, object.brush, true, object.pen)
     markup = `<path d="${d}" fill="${object.color}" fill-opacity="${opacity}" transform="${transform}"/>`
   } else {
-    const d = object.kind === 'shape' ? shapeSvgPath(object) : pointsToPath(object.points, object.closed)
+    const d = object.kind === 'shape' ? shapeSvgPath(object) : vectorSvgPath(object)
     const fill = object.fill && (object.closed || object.kind === 'shape') ? object.color : 'none'
     const dash = brushRendering(object.brush).dotwork ? ` stroke-dasharray="0.1 ${Math.max(3, object.brush.size * 2.2)}"` : ''
     markup = `<path d="${d}" fill="${fill}" stroke="${object.color}" stroke-opacity="${opacity}" stroke-width="${object.brush.size}" stroke-linecap="round" stroke-linejoin="round"${dash} transform="${transform}"/>`

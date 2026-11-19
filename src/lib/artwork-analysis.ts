@@ -1,5 +1,5 @@
-import type { DocModel } from '../types'
-import { boundsCenter, defaultVectorTransform, pointsBounds, transformPoint } from './geometry'
+import type { ControlHandle, DocModel } from '../types'
+import { boundsCenter, controlHandlePoints, defaultVectorTransform, pointsBounds, transformPoint } from './geometry'
 
 export type AnalysisSeverity = 'info' | 'review'
 export type AnalysisCategory = 'detail' | 'vector' | 'composition'
@@ -22,6 +22,7 @@ export interface ArtworkVectorObject {
   brush?: { size: number }
   closed?: boolean
   origin?: { x: number; y: number }
+  handles?: Record<number, ControlHandle>
   transform?: { x: number; y: number; scale: number; rotation: number }
 }
 
@@ -143,7 +144,8 @@ function objectWorldBounds(object: ArtworkVectorObject, points: [number, number]
   const transform = object.transform ?? defaultVectorTransform()
   const pad = Math.max(0.5, (object.brush?.size ?? 2) / 2)
   const worldPoints = points.map(point => transformPoint(point[0], point[1], transform, origin))
-  return pointsBounds(worldPoints, pad)
+  const worldHandles = controlHandlePoints(object).map(point => transformPoint(point[0], point[1], transform, origin))
+  return pointsBounds([...worldPoints, ...worldHandles], pad)
 }
 
 /** Итеративное RDP-упрощение; epsilon в тех же единицах, что и точки. */

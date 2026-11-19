@@ -51,6 +51,10 @@ export function transformBounds(bounds: Bounds, transform: VectorTransform, orig
   return pointsBounds(points)
 }
 
+export function controlHandlePoints(object: { handles?: VectorObject['handles'] }): [number, number][] {
+  return Object.values(object.handles ?? {}).flatMap(handles => [handles.in, handles.out].filter(Boolean) as [number, number][])
+}
+
 export function baseObjectBounds(object: VectorObject): Bounds {
   const pad = object.kind === 'shape'
     ? object.brush.size / 2
@@ -62,7 +66,7 @@ export function baseObjectBounds(object: VectorObject): Bounds {
       return { minX: cx - rx - pad, minY: cy - ry - pad, maxX: cx + rx + pad, maxY: cy + ry + pad }
     }
   }
-  return pointsBounds(object.points, pad)
+  return pointsBounds([...object.points, ...controlHandlePoints(object)], pad)
 }
 
 export function objectOrigin(object: VectorObject): Point {
@@ -94,9 +98,45 @@ export function supportsControlPoints(object: VectorObject): boolean {
 
 export function moveControlPoint(object: VectorObject, index: number, point: VectorObject['points'][number]): boolean {
   if (!supportsControlPoints(object) || !object.points[index]) return false
+  const previous = object.points[index]
   const local = localPoint(point, object)
-  object.points[index] = [local[0], local[1], object.points[index][2]]
+  object.points[index] = [local[0], local[1], previous[2]]
+  const handles = object.handles?.[index]
+  if (handles) {
+    const dx = local[0] - previous[0], dy = local[1] - previous[1]
+    if (handles.in) handles.in = [handles.in[0] + dx, handles.in[1] + dy]
+    if (handles.out) handles.out = [handles.out[0] + dx, handles.out[1] + dy]
+  }
   return true
+}
+
+export function moveControlHandle(object: VectorObject, index: number, side: 'in' | 'out', point: VectorObject['points'][number]): boolean {
+  if (object.kind !== 'path' || !object.points[index]) return false
+  const local = localPoint(point, object)
+  object.handles ??= {}
+  object.handles[index] ??= {}
+  object.handles[index][side] = [local[0], local[1]]
+  return true
+}
+
+export function nearestControlHandle(object: VectorObject, point: VectorObject['points'][number], tolerance: number): { index: number; side: 'in' | 'out' } | undefined {
+  if (object.kind !== 'path') return undefined
+  let nearest = tolerance
+  let result: { index: number; side: 'in' | 'out' } | undefined
+  for (const [key, handles] of Object.entries(object.handles ?? {})) {
+    const index = Number(key)
+    for (const side of ['in', 'out'] as const) {
+      const handle = handles[side]
+      if (!handle) continue
+      const world = worldPoint([handle[0], handle[1], 0], object)
+      const distance = Math.hypot(point[0] - world[0], point[1] - world[1])
+      if (distance <= nearest) {
+        nearest = distance
+        result = { index, side }
+      }
+    }
+  }
+  return result
 }
 
 export function nearestControlPoint(object: VectorObject, point: VectorObject['points'][number], tolerance: number): number | undefined {
@@ -157,8 +197,49 @@ export function shapePath(object: VectorObject): Path2D {
   return path
 }
 
+function pathSegments(object: VectorObject) {
+  const points = object.points
+  const segments: [VectorObject['points'][number], VectorObject['points'][number], number][] = []
+  for (let index = 0; index + 1 < points.length; index++) segments.push([points[index], points[index + 1], index])
+  if (object.closed && points.length > 2) segments.push([points[points.length - 1], points[0], points.length - 1])
+  return segments
+}
+
+export function vectorPath(object: VectorObject): Path2D {
+  const path = new Path2D()
+  if (!object.points.length) return path
+  path.moveTo(object.points[0][0], object.points[0][1])
+  for (const [a, b, index] of pathSegments(object)) {
+    const nextIndex = index + 1 === object.points.length ? 0 : index + 1
+    const out = object.handles?.[index]?.out
+    const incoming = object.handles?.[nextIndex]?.in
+    if (out || incoming) {
+      const c1 = out ?? a, c2 = incoming ?? b
+      path.bezierCurveTo(c1[0], c1[1], c2[0], c2[1], b[0], b[1])
+    } else path.lineTo(b[0], b[1])
+  }
+  if (object.closed) path.closePath()
+  return path
+}
+
 export function pointsToPath(points: readonly GeometryPoint[], closed = false): string {
   return points.map((point, index) => `${index ? 'L' : 'M'}${point[0].toFixed(2)},${point[1].toFixed(2)}`).join(' ') + (closed ? ' Z' : '')
+}
+
+export function vectorSvgPath(object: VectorObject): string {
+  if (!Object.keys(object.handles ?? {}).length) return pointsToPath(object.points, object.closed)
+  if (!object.points.length) return ''
+  let d = `M${object.points[0][0].toFixed(2)},${object.points[0][1].toFixed(2)}`
+  for (const [a, b, index] of pathSegments(object)) {
+    const nextIndex = index + 1 === object.points.length ? 0 : index + 1
+    const out = object.handles?.[index]?.out
+    const incoming = object.handles?.[nextIndex]?.in
+    if (out || incoming) {
+      const c1 = out ?? a, c2 = incoming ?? b
+      d += ` C${c1[0].toFixed(2)},${c1[1].toFixed(2)} ${c2[0].toFixed(2)},${c2[1].toFixed(2)} ${b[0].toFixed(2)},${b[1].toFixed(2)}`
+    } else d += ` L${b[0].toFixed(2)},${b[1].toFixed(2)}`
+  }
+  return d + (object.closed ? ' Z' : '')
 }
 
 export function shapeSvgPath(object: VectorObject): string {

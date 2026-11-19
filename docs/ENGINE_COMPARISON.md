@@ -38,14 +38,14 @@
 
 | Область | LOC |
 |---|---|
-| `src/` (приложение) | 7553 |
-| `src/` (тесты) | 1901 |
+| `src/` (приложение) | 7702 |
+| `src/` (тесты) | 1944 |
 | `desktop/` (Electron) + тесты | 676 + 222 |
 | `android/` (Capacitor-обвязка) | 652 |
-| `scripts/` (регрессии, аудит, маркетинг) | 4373 |
+| `scripts/` (регрессии, аудит, маркетинг) | 4414 |
 | Зависимости | 9 prod / 22 dev |
 
-Метод подсчёта: логические строки (`splitlines`), включая последнюю строку без newline. `src/` — 39 файлов `ts/tsx/css` без `*.test.*` (из них `ts/tsx` 7089 + CSS 464 = 7553); `android/` — только собственные файлы в `android/app/src/main` (ровно 14 `java/xml`, сгенерированные исключены); `desktop/` — только `desktop/src` (без `dist/` и тестов сборки).
+Метод подсчёта: логические строки (`splitlines`), включая последнюю строку без newline. `src/` — 40 файлов `ts/tsx/css` без `*.test.*` (из них `ts/tsx` 7238 + CSS 464 = 7702); `android/` — только собственные файлы в `android/app/src/main` (ровно 14 `java/xml`, сгенерированные исключены); `desktop/` — только `desktop/src` (без `dist/` и тестов сборки).
 
 ## Объективно слабее
 
@@ -102,7 +102,8 @@
 - print / color — **базовый pipeline реализован**: печать в миллиметрах с режимами color, grayscale и stencil; полный ICC остаётся отдельной задачей.
 
 **Позже** (цена внедрения выше, отдача для ниши ниже):
-- PSD / ABR — импорт форматов конкурентов (пресеты кистей и документы);
+- PSD — **реализован ограниченный вариант**: flattened RGB/RGBA 8-bit, raw и RLE; слои, маски и эффекты PSD не заявляются;
+- ABR — следующий кандидат для импорта пресетов кистей;
 - plugin API — расширяемость (Python у Krita; публичный API у CSP не заявляем);
 - ICC — полноценный цветоменеджмент; сейчас у нас DPI/физический размер экспорта без полного ICC (простой CMYK-конверсии нет).
 
@@ -114,9 +115,9 @@
 
 Актуальный статус на 2026-11-18 (Node 22):
 
-- **PASS** — 125 тестов / 18 тестовых файлов (`vitest`): 14 в `src/` + 4 в `desktop/`;
+- **PASS** — 128 тестов / 19 тестовых файлов (`vitest`): 15 в `src/` + 4 в `desktop/`;
 - **PASS** — `lint`, `build`, `desktop:typecheck`;
-- **PASS** — production regression 8/8, advanced regression 11/11, media regression 3/3;
+- **PASS** — production regression 8/8, advanced regression 12/12, media regression 3/3;
 - **PASS** — StrictMode regression;
 - **PASS** — runtime A/B; Windows RSS и текущий memory-сценарий C выполнены, сравнение D не оценивалось без baseline;
 - **PASS** — paired stroke latency E (63 образца): p50 28,60 → 28,20 мс, p95 33,80 → 32,50 мс; canvas после commit идентичен baseline;

@@ -18,7 +18,7 @@ import {
   simplifyVectorPath, supportsControlPoints, transformVectorGroup, unionBounds, worldPoint,
 } from '../lib/geometry'
 import {
-  cloneObjects, hitVectorObject, renderVectorLayer, renderVectorObject, vectorId,
+  cloneObjects, duplicateVectorObjects, hitVectorObject, renderVectorLayer, renderVectorObject, vectorId,
 } from '../lib/vector'
 
 export interface StudioHandle {
@@ -26,6 +26,7 @@ export interface StudioHandle {
   redo: () => void
   clearActive: () => void
   deleteSelectedObject: () => void
+  duplicateSelectedObjects: () => void
   setSelectedObjectSize: (size: number) => void
   simplifySelectedPath: (epsilon?: number) => void
   commitPen: (closed?: boolean) => void
@@ -495,6 +496,20 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     scheduleRender()
   }, [pushObjectHistory, scheduleRender])
 
+  const duplicateSelectedObjects = useCallback(() => {
+    const { layers, activeLayerId, selectedObjectId, selectedObjectIds } = propsRef.current
+    const layer = layers.find(item => item.id === activeLayerId)
+    const ids = selectedObjectIds?.length ? selectedObjectIds : selectedObjectId ? [selectedObjectId] : []
+    if (!layer || layer.kind !== 'vector' || layer.locked || !ids.length) return
+    const before = cloneObjects(layer.objects)
+    const duplicates = duplicateVectorObjects(before, ids)
+    if (!duplicates.length) return
+    pushObjectHistory(layer, before, [...before, ...duplicates])
+    propsRef.current.onSelectObjects(duplicates.map(object => object.id))
+    propsRef.current.onMutated()
+    scheduleRender()
+  }, [pushObjectHistory, scheduleRender])
+
   const setSelectedObjectSize = useCallback((nextSize: number) => {
     const { layers, activeLayerId, selectedObjectId } = propsRef.current
     const layer = layers.find(item => item.id === activeLayerId)
@@ -577,6 +592,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     },
     clearActive,
     deleteSelectedObject,
+    duplicateSelectedObjects,
     setSelectedObjectSize,
     simplifySelectedPath,
     commitPen,
@@ -653,7 +669,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       return analyzeArtwork(doc, artworkLayers, image)
     },
     historyPixels: () => historyRef.current.size,
-  }), [addPath, clearActive, commitPen, composeTo, deleteSelectedObject, releaseBuffer, restoreHistory, scheduleRender, setSelectedObjectSize, simplifySelectedPath, updateHistoryState])
+  }), [addPath, clearActive, commitPen, composeTo, deleteSelectedObject, duplicateSelectedObjects, releaseBuffer, restoreHistory, scheduleRender, setSelectedObjectSize, simplifySelectedPath, updateHistoryState])
 
   const clientToDoc = useCallback((clientX: number, clientY: number): StrokePoint => {
     const canvas = canvasRef.current!

@@ -30,7 +30,7 @@ import {
   makePaintLayer, makeVectorLayer, redrawImageLayer, restoreProject,
   safeFilename, snapshotProject, uid,
 } from './lib/project'
-import { cloneObjects } from './lib/vector'
+import { cloneObjects, duplicateVectorObjects } from './lib/vector'
 import { RecoverySession } from './lib/recovery'
 import type {
   BrushConfig, BrushId, BrushPreset, DocModel, GuideMode, LayerModel,
@@ -395,7 +395,8 @@ export default function App() {
     }
     const copy: LayerModel = {
       ...activeLayer, id: uid(), name: `${activeLayer.name} · копия`, canvas, mask,
-      objects: cloneObjects(activeLayer.objects), filterCache: undefined, filterKey: undefined,
+      objects: duplicateVectorObjects(activeLayer.objects ?? [], (activeLayer.objects ?? []).map(object => object.id), 0),
+      filterCache: undefined, filterKey: undefined,
       dataCache: undefined, maskCache: undefined, pixelVersion: activeLayer.pixelVersion + 1,
       maskVersion: (activeLayer.maskVersion ?? 0) + 1,
     }
@@ -615,7 +616,10 @@ export default function App() {
         event.preventDefault(); saveProject(); return
       }
       if ((event.ctrlKey || event.metaKey) && key === 'd') {
-        event.preventDefault(); setSelection(null); return
+        event.preventDefault()
+        if (selectedObjectId) studioRef.current?.duplicateSelectedObjects()
+        else setSelection(null)
+        return
       }
       if (key === 'delete' || key === 'backspace') {
         if (selectedObjectId) studioRef.current?.deleteSelectedObject()
@@ -744,6 +748,7 @@ export default function App() {
               selectedObjectSize={selectedObject?.brush.size ?? null}
               onObjectSize={size => studioRef.current?.setSelectedObjectSize(size)}
               simplifyEpsilon={simplifyEpsilon} onSimplifyEpsilon={setSimplifyEpsilon}
+              onDuplicate={selectedObject ? () => studioRef.current?.duplicateSelectedObjects() : undefined}
               onSimplify={selectedObject && selectedObject.kind !== 'shape' && selectedObject.points.length >= 3
                 ? () => studioRef.current?.simplifySelectedPath(simplifyEpsilon) : undefined}
             />
@@ -896,7 +901,7 @@ export default function App() {
         <div className="help-content">
           <section><h3>Линворк</h3><ol><li>Импортируйте скан в правой панели.</li><li>Добавьте растровый слой для свободной кисти или векторный для редактируемых контуров.</li><li>На векторном слое рисуйте кистью, линией, фигурами и пером. Инструмент «Объект» перемещает, масштабирует и вращает объекты; Shift+click выбирает группу для совместной трансформации; узлы пера и векторных штрихов редактируются отдельно. Alt+перетаскивание узла пера создаёт кривую Безье, её ручки двигаются отдельно. Alt+click по сегменту добавляет узел, двойной click по узлу удаляет его. Alt+колесо над узлом меняет его толщину.</li><li>Проверьте трафарет и экспортируйте PNG, SVG или печать в миллиметрах.</li><li>«Проверка эскиза» запускает локальный анализ узлов, деталей и композиции — это рекомендации, а не ошибки.</li></ol></section>
           <section><h3>Выделения и маски</h3><p>Область, эллипс и лассо ограничивают кисть, заливку и очистку. Инструмент «Объект» перемещает выделенные растровые пиксели. Маска не удаляет исходник: кисть показывает, ластик скрывает.</p></section>
-          <section><h3>Клавиши</h3><div className="shortcut-grid"><span><kbd>V</kbd> Объект</span><span><kbd>B</kbd> Кисть</span><span><kbd>E</kbd> Ластик</span><span><kbd>P</kbd> Перо</span><span><kbd>S</kbd> Фигура</span><span><kbd>G</kbd> Заливка</span><span><kbd>A</kbd> Область</span><span><kbd>W</kbd> Лассо</span><span><kbd>M</kbd> Симметрия</span><span><kbd>T</kbd> Трафарет</span><span><kbd>[ ]</kbd> Размер</span><span><kbd>0</kbd> Вписать</span></div></section>
+          <section><h3>Клавиши</h3><div className="shortcut-grid"><span><kbd>V</kbd> Объект</span><span><kbd>B</kbd> Кисть</span><span><kbd>E</kbd> Ластик</span><span><kbd>P</kbd> Перо</span><span><kbd>S</kbd> Фигура</span><span><kbd>G</kbd> Заливка</span><span><kbd>A</kbd> Область</span><span><kbd>W</kbd> Лассо</span><span><kbd>M</kbd> Симметрия</span><span><kbd>T</kbd> Трафарет</span><span><kbd>[ ]</kbd> Размер</span><span><kbd>Ctrl+D</kbd> Дублировать / снять</span><span><kbd>0</kbd> Вписать</span></div></section>
           <section><h3>Планшет и Windows</h3><p>Один контакт рисует, два пальца масштабируют холст. «Только перо» блокирует следы ладони. На Windows 10/11 приложение работает в Edge или Chrome и устанавливается как PWA. «Диагностика устройства» в верхней панели локально проверяет Canvas 2D, маски, нажим пера и фильтры трафарета — без сети и без отправки данных.</p></section>
           <section><h3>Хранение</h3><p>Автосохранение локально для этого браузера. После сбоя приложение предложит восстановить аварийную копию. Для резервной копии и переноса используйте проект v2 .tattoo.json. Старые проекты v1 открываются автоматически.</p></section>
         </div>

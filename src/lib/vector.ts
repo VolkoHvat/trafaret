@@ -25,6 +25,22 @@ export const cloneObjects = (objects: VectorObject[] = []) => {
   return cloned
 }
 
+export function duplicateVectorObjects(
+  objects: VectorObject[],
+  selectedIds: string[],
+  offset = 20,
+  idFactory: () => string = vectorId,
+): VectorObject[] {
+  const selected = new Set(selectedIds)
+  return objects.filter(object => selected.has(object.id)).map(object => {
+    const copy = cloneObjects([object])[0]
+    copy.id = idFactory()
+    copy.transform.x += offset
+    copy.transform.y += offset
+    return copy
+  })
+}
+
 function linearPath(object: VectorObject) {
   return vectorPath(object)
 }

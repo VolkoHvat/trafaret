@@ -1214,6 +1214,71 @@ async function s26PathSimplify() {
   } finally { await context.close().catch(() => {}) }
 }
 
+// ---------- Scenario 27: vector object duplication + exact Undo/Redo ----------
+async function s27VectorDuplication() {
+  const { context, page, trackers } = await freshContext()
+  try {
+    const box = await canvasBox(page)
+    await page.keyboard.press('p')
+    await sleep(250)
+    for (const [x, y] of [[500, 500], [700, 500]]) {
+      const point = docToClient(box, x, y)
+      await page.mouse.click(point.x, point.y)
+      await sleep(100)
+    }
+    await page.keyboard.press('Enter')
+    await sleep(350)
+    const beforeFile = '/tmp/trafaret-duplicate-before.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), beforeFile)
+    const beforeJson = JSON.parse(await readFile(beforeFile, 'utf8'))
+    const beforeObjects = beforeJson.layers.find(layer => layer.kind === 'vector')?.objects ?? []
+    if (beforeObjects.length !== 1) throw new Error('expected one source vector object')
+
+    await page.click('button:has-text("Дублировать · Ctrl+D")')
+    await sleep(350)
+    const afterFile = '/tmp/trafaret-duplicate-after.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), afterFile)
+    const afterJson = JSON.parse(await readFile(afterFile, 'utf8'))
+    const afterObjects = afterJson.layers.find(layer => layer.kind === 'vector')?.objects ?? []
+    const copy = afterObjects.find(object => object.id !== beforeObjects[0].id)
+    const originalPreserved = JSON.stringify(afterObjects.find(object => object.id === beforeObjects[0].id)) === JSON.stringify(beforeObjects[0])
+    const offsetApplied = copy?.transform?.x === beforeObjects[0].transform.x + 20
+      && copy?.transform?.y === beforeObjects[0].transform.y + 20
+
+    await page.keyboard.press('Control+z')
+    await sleep(350)
+    const undoFile = '/tmp/trafaret-duplicate-undo.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), undoFile)
+    const undoJson = JSON.parse(await readFile(undoFile, 'utf8'))
+    const undoObjects = undoJson.layers.find(layer => layer.kind === 'vector')?.objects ?? []
+    const undoExact = JSON.stringify(undoObjects) === JSON.stringify(beforeObjects)
+
+    await page.keyboard.press('Control+Shift+z')
+    await sleep(350)
+    const redoFile = '/tmp/trafaret-duplicate-redo.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), redoFile)
+    const redoJson = JSON.parse(await readFile(redoFile, 'utf8'))
+    const redoObjects = redoJson.layers.find(layer => layer.kind === 'vector')?.objects ?? []
+    const redoExact = JSON.stringify(redoObjects) === JSON.stringify(afterObjects)
+
+    await page.click('button[aria-label="Дублировать активный слой"]')
+    await sleep(350)
+    const layerFile = '/tmp/trafaret-duplicate-layer.tattoo.json'
+    await downloadTo(page, () => page.click('header button:has-text("Сохранить")'), layerFile)
+    const layerJson = JSON.parse(await readFile(layerFile, 'utf8'))
+    const vectorLayers = layerJson.layers.filter(layer => layer.kind === 'vector')
+    const allIds = vectorLayers.flatMap(layer => layer.objects?.map(object => object.id) ?? [])
+    const layerIdsUnique = vectorLayers.length === 2 && allIds.length === 4 && new Set(allIds).size === 4
+    const err = errorSummary(trackers)
+    const pass = afterObjects.length === 2 && originalPreserved && offsetApplied && undoExact && redoExact && layerIdsUnique && err.clean
+    return {
+      status: pass ? 'PASS' : 'FAIL',
+      evidence: { afterCount: afterObjects.length, originalPreserved, offsetApplied, undoExact, redoExact,
+        vectorLayerCount: vectorLayers.length, layerIdsUnique, ...err },
+    }
+  } finally { await context.close().catch(() => {}) }
+}
+
 // ---------- main ----------
 const started = Date.now()
 console.log(`[audit] production dist=${distDir}`)
@@ -1238,6 +1303,7 @@ const scenarios = [
   ['24-icc-profiles', 'sRGB and Display P3 PNG exports include valid ICC metadata and converted pixels', s24IccProfiles],
   ['25-plugin-api', 'Declarative plugin applies brush, symmetry and a mirrored path without executing code', s25PluginApi],
   ['26-path-simplify', 'RDP simplifies 30 collinear pen nodes to two endpoints with exact Undo/Redo', s26PathSimplify],
+  ['27-vector-duplication', 'Selected vector duplication uses fresh ids, a 20px offset and exact Undo/Redo; layer copies also renew ids', s27VectorDuplication],
 ]
 
 const report = {

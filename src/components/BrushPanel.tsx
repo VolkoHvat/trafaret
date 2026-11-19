@@ -1,4 +1,4 @@
-import { Brush, Check, Pipette, Save, Spline, Trash2 } from 'lucide-react'
+import { Brush, Check, Copy, Pipette, Save, Spline, Trash2 } from 'lucide-react'
 import type { BrushConfig, BrushId, BrushPreset, PressureCurve } from '../types'
 import { BRUSH_ORDER } from '../lib/brushes'
 import { PanelHeading, Slider } from './UI'
@@ -8,7 +8,7 @@ const PALETTE = ['#171914', '#f2f0e7', '#7d1f2d', '#1f4e46', '#314c76', '#a36938
 export function BrushPanel({
   brushes, activeId, customPresets, activeCustomIndex, onSelect, onSelectCustom,
   onSavePreset, onDeletePreset, onUpdate, color, onColor, stylusOnly, onStylusOnly,
-  selectedObjectSize, onObjectSize, simplifyEpsilon, onSimplifyEpsilon, onSimplify,
+  selectedObjectSize, onObjectSize, simplifyEpsilon, onSimplifyEpsilon, onSimplify, onDuplicate,
 }: {
   brushes: Record<BrushId, BrushConfig>
   activeId: BrushId
@@ -28,6 +28,7 @@ export function BrushPanel({
   simplifyEpsilon: number
   onSimplifyEpsilon: (value: number) => void
   onSimplify?: () => void
+  onDuplicate?: () => void
 }) {
   const brush = activeCustomIndex !== null && customPresets[activeCustomIndex]
     ? customPresets[activeCustomIndex].config
@@ -66,6 +67,7 @@ export function BrushPanel({
           <div className="group-title"><Spline size={14} /><span>Выбранный объект</span></div>
           <Slider label="Толщина объекта" min={1} max={120} value={selectedObjectSize} unit=" px" onChange={onObjectSize} />
           <p className="control-hint">Меняется только выбранная векторная линия, не кисть.</p>
+          {onDuplicate && <button className="secondary-button full-width" onClick={onDuplicate}><Copy size={15} />Дублировать · Ctrl+D</button>}
           {onSimplify && <>
             <Slider label="Допуск упрощения" min={0.5} max={12} step={0.5} value={simplifyEpsilon} unit=" px" onChange={onSimplifyEpsilon} />
             <button className="secondary-button full-width" onClick={onSimplify}><Spline size={15} />Упростить контур</button>

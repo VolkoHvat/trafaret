@@ -1155,7 +1155,7 @@ async function s26PathSimplify() {
     await page.keyboard.press('p')
     await sleep(250)
     for (let index = 0; index < 30; index++) {
-      const point = docToClient(box, 350 + index * 20, 500)
+      const point = docToClient(box, 350 + index * 20, index === 15 ? 503 : 500)
       await page.mouse.click(point.x, point.y)
       await sleep(60)
     }
@@ -1168,6 +1168,15 @@ async function s26PathSimplify() {
     if (beforePath?.points?.length !== 30) throw new Error(`expected 30 path points, got ${beforePath?.points?.length}`)
     const sampleBefore = await sampleGrid(page)
 
+    const simplifySlider = page.locator('label.control-slider', { hasText: 'Допуск упрощения' }).locator('input')
+    await simplifySlider.evaluate(input => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setter?.call(input, '3')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const epsilonApplied = await simplifySlider.inputValue() === '3'
+    await sleep(250)
     await page.click('button:has-text("Упростить контур")')
     await sleep(350)
     const afterFile = '/tmp/trafaret-simplify-after.tattoo.json'
@@ -1196,11 +1205,11 @@ async function s26PathSimplify() {
     const redoExact = JSON.stringify(redoPath) === JSON.stringify(afterPath)
     const undoPixelsExact = exactEqual(sampleUndone, sampleBefore)
     const err = errorSummary(trackers)
-    const pass = afterPath?.points?.length === 2 && endpointsPreserved && undoExact && redoExact && undoPixelsExact && err.clean
+    const pass = afterPath?.points?.length === 2 && epsilonApplied && endpointsPreserved && undoExact && redoExact && undoPixelsExact && err.clean
     return {
       status: pass ? 'PASS' : 'FAIL',
       evidence: { beforeCount: beforePath.points.length, afterCount: afterPath?.points?.length,
-        endpointsPreserved, undoExact, redoExact, undoPixelsExact, ...err },
+        epsilonApplied, endpointsPreserved, undoExact, redoExact, undoPixelsExact, ...err },
     }
   } finally { await context.close().catch(() => {}) }
 }

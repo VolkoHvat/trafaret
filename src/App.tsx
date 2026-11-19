@@ -48,6 +48,7 @@ interface WorkspaceSettings {
   customPresets?: BrushPreset[]
   color?: string
   stylusOnly?: boolean
+  simplifyEpsilon?: number
 }
 
 function readWorkspaceSettings(): WorkspaceSettings {
@@ -85,6 +86,7 @@ export default function App() {
   const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>([])
   const [stencil, setStencil] = useState(false)
   const [stylusOnly, setStylusOnly] = useState(workspaceSettings.stylusOnly ?? true)
+  const [simplifyEpsilon, setSimplifyEpsilon] = useState(() => Math.max(0.5, Math.min(12, workspaceSettings.simplifyEpsilon || 2)))
   const [flipped, setFlipped] = useState(false)
   const [view, setView] = useState<ViewState>(initialView)
   const [renderToken, setRenderToken] = useState(0)
@@ -131,9 +133,9 @@ export default function App() {
   }, [selectedObjectId])
 
   useEffect(() => {
-    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ brushId, brushes, customPresets, color, stylusOnly })) }
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ brushId, brushes, customPresets, color, stylusOnly, simplifyEpsilon })) }
     catch { /* Settings persistence is optional when storage is unavailable. */ }
-  }, [brushId, brushes, customPresets, color, stylusOnly])
+  }, [brushId, brushes, customPresets, color, stylusOnly, simplifyEpsilon])
 
   const showNotice = useCallback((message: string) => setNotice(message), [])
   useEffect(() => {
@@ -741,8 +743,9 @@ export default function App() {
               color={color} onColor={setColor} stylusOnly={stylusOnly} onStylusOnly={setStylusOnly}
               selectedObjectSize={selectedObject?.brush.size ?? null}
               onObjectSize={size => studioRef.current?.setSelectedObjectSize(size)}
+              simplifyEpsilon={simplifyEpsilon} onSimplifyEpsilon={setSimplifyEpsilon}
               onSimplify={selectedObject && selectedObject.kind !== 'shape' && selectedObject.points.length >= 3
-                ? () => studioRef.current?.simplifySelectedPath() : undefined}
+                ? () => studioRef.current?.simplifySelectedPath(simplifyEpsilon) : undefined}
             />
             <DocumentPanel
               symmetry={symmetry} radialCount={radialCount} guide={guide} shapeKind={shapeKind}

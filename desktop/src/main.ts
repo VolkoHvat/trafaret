@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, net, safeStorage, shell } from 'electron'
 import { join } from 'node:path'
 import { randomBytes, webcrypto } from 'node:crypto'
+import { betaFeedbackUrl } from '../../src/lib/beta-feedback-url'
 import { AuthService } from './auth-service'
 import { ConfigStore, defaultConfigPath } from './config'
 import { isAllowedNavigation } from './navigation'
@@ -44,7 +45,7 @@ function createWindow() {
 
   // Никакого удалённого контента и всплывающих окон: внешние ссылки — в системный браузер.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('https://') || url.startsWith('http://')) void shell.openExternal(url)
+    if (url === betaFeedbackUrl) void shell.openExternal(betaFeedbackUrl).catch(() => console.warn('Не удалось открыть форму GitHub'))
     return { action: 'deny' }
   })
   // Навигация только по allowlist: собственный dist/index.html и (в dev) vite origin.

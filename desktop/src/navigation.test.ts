@@ -13,6 +13,20 @@ describe('isAllowedNavigation', () => {
     expect(isAllowedNavigation('file:///opt/trafaret/dist/index.html#stroke', allowlist)).toBe(true)
   })
 
+  it('разрешает переход в основную студию только внутри собственного Windows-пакета', () => {
+    const app = { appPath: 'C:\\Program Files\\Трафарет\\resources\\app.asar', devOrigin: null }
+    const entry = new URL('file:///C:/Program%20Files/Трафарет/resources/app.asar/dist/index.html')
+    expect(isAllowedNavigation(`${entry.href}?field=2048`, app)).toBe(true)
+    for (const other of [
+      entry.href.replace('/C:', '/D:'),
+      entry.href.replace('/app.asar/', '/other.asar/'),
+      entry.href.replace('file:///', 'file://server/'),
+      entry.href.replace('file:///', 'file:////server/'),
+      entry.href.replace('/index.html', '%5Cindex.html'),
+      entry.href.replace('/index.html', '/%ZZ'),
+    ]) expect(isAllowedNavigation(other, app)).toBe(false)
+  })
+
   it('разрешает dev origin и запрещает прочие http(s)', () => {
     const dev = { appPath: APP, devOrigin: 'http://localhost:3000' }
     expect(isAllowedNavigation('http://localhost:3000/pages/main', dev)).toBe(true)

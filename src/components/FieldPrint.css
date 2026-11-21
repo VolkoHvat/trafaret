@@ -1,0 +1,6 @@
+@page { size: A4 portrait; margin: 10mm; }
+html, body { margin: 0; padding: 0; color: black; background: white; }
+img { display: block; }
+figure { margin: 0; break-inside: avoid; }
+figcaption { padding-top: 3mm; font: 3mm/4mm sans-serif; }
+.ruler { display: block; box-sizing: border-box; height: 3mm; border: solid black; border-width: 0 .25mm .25mm; }

@@ -1,0 +1,14 @@
+/* The mark belongs to the instruments, never to the projection. */
+:is(.hud-head,.surface-workspace > header) > div:first-child {
+  background: url('./dragon-sigil.svg') left center / auto min(100%, 3rem) no-repeat;
+  padding-inline-start: 3.4rem;
+}
+:is(.hud-head,.surface-workspace > header) {
+  background-color:#1c191b;
+  border-image:linear-gradient(90deg,#e05564,#59424a 36%,#383639) 1;
+}
+@media(max-width:540px), (max-height:520px) {
+  :is(.hud-head,.surface-workspace > header) > div:first-child {
+    background-size: auto 1.8rem; padding-inline-start:2.1rem;
+  }
+}

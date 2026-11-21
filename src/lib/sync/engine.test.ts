@@ -1,5 +1,5 @@
 import { md5Hex } from './md5'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SyncEngine } from './engine'
 import { DrivePreconditionError, SyncAuthError, projectFileName } from './types'
 import type {
@@ -152,6 +152,9 @@ function makeEngine() {
 }
 
 describe('SyncEngine', () => {
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers() })
+
   it('первый sync загружает проект в папку «Трафарет»', async () => {
     const { adapter, engine, store, statuses } = makeEngine()
     engine.updatePayload(makePayload(1))
@@ -302,7 +305,7 @@ describe('SyncEngine', () => {
     expect(engine.getStatus().state).toBe('offline')
 
     setOnline(true)
-    await new Promise(resolve => setTimeout(resolve, 120))
+    await vi.advanceTimersByTimeAsync(30)
     expect(engine.getStatus().state).toBe('synced')
     expect(adapter.calls.upload).toBe(1)
   })
@@ -315,7 +318,7 @@ describe('SyncEngine', () => {
     engine.notifyLocalChange(makePayload(3, 'c'))
 
     expect(engine.getStatus().state).toBe('pending')
-    await new Promise(resolve => setTimeout(resolve, 120))
+    await vi.advanceTimersByTimeAsync(20)
     expect(engine.getStatus().state).toBe('synced')
     expect(adapter.calls.upload).toBe(1)
     expect(adapter.remoteContent('file-1')).toBe(makeJson(3, 'c'))
@@ -358,9 +361,11 @@ describe('SyncEngine', () => {
     adapter.downloadDelayMs = 60
 
     const pending = engine.syncNow()
-    await new Promise(resolve => setTimeout(resolve, 10))
+    await vi.advanceTimersByTimeAsync(10)
     // Пока идёт download, пользователь ставит новый штрих.
+    expect(adapter.calls.download).toBe(1)
     engine.notifyLocalChange(makePayload(3, 'fresh-stroke'))
+    await vi.advanceTimersByTimeAsync(50)
     const status = await pending
 
     expect(status.state).toBe('conflict')
@@ -384,13 +389,14 @@ describe('SyncEngine', () => {
 
     engine.updatePayload(makePayload(2, 'first-edit'))
     const pending = engine.syncNow()
-    await new Promise(resolve => setTimeout(resolve, 10))
+    await vi.advanceTimersByTimeAsync(10)
     engine.notifyLocalChange(makePayload(3, 'second-edit'))
+    await vi.advanceTimersByTimeAsync(50)
     const first = await pending
     expect(first.state).toBe('synced')
 
     // Второй цикл идёт через debounce, последовательно (не параллельно).
-    await new Promise(resolve => setTimeout(resolve, 150))
+    await vi.advanceTimersByTimeAsync(80)
     expect(engine.getStatus().state).toBe('synced')
     expect(adapter.calls.update).toBe(2)
     expect(adapter.remoteContent('file-1')).toBe(makeJson(3, 'second-edit'))

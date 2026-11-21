@@ -1,4 +1,5 @@
-import { join, normalize } from 'node:path'
+import { posix, win32 } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 export interface NavigationAllowlist {
   /** Путь к корню приложения (app.getAppPath()); index.html ищется в dist/. */
@@ -22,7 +23,13 @@ export function isAllowedNavigation(url: string, allowed: NavigationAllowlist): 
   if (allowed.devOrigin && parsed.origin === allowed.devOrigin) return true
   if (parsed.protocol !== 'file:') return false
   if (parsed.host !== '') return false
-  const target = normalize(decodeURIComponent(parsed.pathname))
-  const expected = normalize(join(allowed.appPath, 'dist', 'index.html'))
-  return target === expected
+  if (parsed.pathname.startsWith('//')) return false
+  const windows = /^[A-Za-z]:[\\/]/.test(allowed.appPath)
+  if (!windows && !allowed.appPath.startsWith('/')) return false
+  const expected = (windows ? win32 : posix).join(allowed.appPath, 'dist', 'index.html')
+  try {
+    return fileURLToPath(parsed, { windows }) === expected
+  } catch {
+    return false
+  }
 }

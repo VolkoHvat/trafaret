@@ -84,9 +84,23 @@ describe('Compositor', () => {
       current: { layerId: 'pristine', channel: 'content', eraser: false, canvas: asCanvas(stroke) },
     })
 
-    expect(created).toHaveLength(1)
-    expect(created[0].context.drawImage.mock.calls.map(call => call[0])).toEqual([pristine.canvas, asCanvas(stroke)])
-    expect(target.context.drawImage).toHaveBeenCalledWith(asCanvas(created[0]), 0, 0)
+    expect(created).toHaveLength(0)
+    expect(target.context.drawImage.mock.calls).toEqual([[asCanvas(stroke), 0, 0]])
+  })
+
+  it('keeps the preview grouped before applying the layer mask', () => {
+    stubDocument()
+    const masked = layer('masked', { mask: asCanvas(new FakeCanvas()) })
+    const target = new FakeCanvas(), stroke = asCanvas(new FakeCanvas())
+    new Compositor().compose({
+      target: asCanvas(target), doc, layers: [masked], activeLayerId: masked.id,
+      background: true, stencilMode: false,
+      current: { layerId: masked.id, channel: 'content', eraser: false, canvas: stroke },
+    })
+    expect(created).toHaveLength(2)
+    expect(created[0].context.drawImage.mock.calls.map(call => call[0])).toEqual([masked.canvas, stroke])
+    expect(created[1].context.drawImage.mock.calls.map(call => call[0])).toEqual([created[0], masked.mask])
+    expect(target.context.drawImage).toHaveBeenCalledWith(created[1], 0, 0)
   })
 
   it('owns and releases clip-to-below buffers', () => {

@@ -1,6 +1,8 @@
 import { useMemo } from 'react'
 import { Info, ListChecks } from 'lucide-react'
 import type { AnalysisCategory, AnalysisFinding, ArtworkReport } from '../lib/artwork-analysis'
+import type { QualityReport } from '../lib/quality'
+import type { VisibleQuality } from '../lib/quality/visible'
 import { StudioDialog } from './UI'
 
 const CATEGORY_LABELS: Record<AnalysisCategory, string> = {
@@ -53,10 +55,13 @@ function formatEvidenceValue(value: number): string {
   return String(value)
 }
 
-export function AnalysisDialog({ open, onOpenChange, report }: {
+export function AnalysisDialog({ open, onOpenChange, report, qualityReport, qualityStatus, qualityLimit }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   report: ArtworkReport | null
+  qualityReport: QualityReport | null
+  qualityStatus: VisibleQuality['status'] | null
+  qualityLimit: number | null
 }) {
   const grouped = useMemo(() => {
     const groups = new Map<AnalysisCategory, AnalysisFinding[]>()
@@ -84,6 +89,24 @@ export function AnalysisDialog({ open, onOpenChange, report }: {
     >
       {metrics && (
         <div className="analysis-content">
+          {qualityStatus === 'ready' && qualityReport && (
+            <section aria-label="Качество линейной работы">
+              <h3>Качество линейной работы</h3>
+              <p><strong>{Math.round(qualityReport.score * 100)}%</strong> · {qualityReport.level}</p>
+              <dl className="analysis-metrics">
+                <div className="analysis-metric"><dt>Непрерывность</dt><dd>{Math.round(qualityReport.metrics.continuity.score * 100)}%</dd></div>
+                <div className="analysis-metric"><dt>Резкие изломы</dt><dd>{qualityReport.metrics.sharpTurns.count}</dd></div>
+                <div className="analysis-metric"><dt>Равномерность толщины</dt><dd>{Math.round(qualityReport.metrics.thickness.score * 100)}%</dd></div>
+                <div className="analysis-metric"><dt>Пересечения</dt><dd>{qualityReport.metrics.intersections.count}</dd></div>
+                <div className="analysis-metric"><dt>Шумовые сегменты</dt><dd>{qualityReport.metrics.noise.count}</dd></div>
+                <div className="analysis-metric"><dt>Вне документа</dt><dd>{qualityReport.metrics.bounds.count}</dd></div>
+              </dl>
+              {qualityReport.metrics.motion.available && <p>Скорость: {Math.round(qualityReport.metrics.motion.score * 100)}%</p>}
+              {qualityReport.recommendations.length > 0 && <ul>{qualityReport.recommendations.map(item => <li key={item}>{item}</li>)}</ul>}
+            </section>
+          )}
+          {qualityStatus === 'empty' && <p role="status">Нет видимых векторных линий для анализа качества. Растровый документ не оценивается.</p>}
+          {qualityStatus === 'limited' && <p role="status">Анализ качества ограничен: объём векторных данных превышает {qualityLimit} узлов. Уменьшите выборку или анализируйте отдельные штрихи.</p>}
           <dl className="analysis-metrics">
             <div className="analysis-metric">
               <dt>Покрытие холста</dt>

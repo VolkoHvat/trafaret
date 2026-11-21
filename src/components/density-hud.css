@@ -1,0 +1,102 @@
+@import './studio-chrome.css';
+
+.density-hud:not([hidden]) {
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
+  max-width: none; height: 100dvh; padding: 0; overflow: clip;
+  background: #101114; color: #ecebed; font-size: 14px;
+}
+.density-hud [hidden] { display: none !important; }
+.hud-head, .hud-status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; background: #17181b; padding: 10px 16px; }
+.hud-head { border-bottom: 1px solid #414246; }
+.hud-head h1 { font-size: 19px; line-height: 1.25; }
+.hud-head small, .hud-switch, .density-hud legend { color: #ff9786; font: 500 11px/1.5 var(--font-mono); }
+.hud-head b { margin-right: auto; color: #d3cacc; font: 12px var(--font-mono); }
+.hud-body { display: grid; grid-template-columns: minmax(17rem, 21rem) minmax(0,1fr); min-height: 0; }
+.hud-inspector { overflow: auto; overscroll-behavior: contain; padding: 0 14px 12px; background: #1a1b1f; border-right: 1px solid #414246; }
+.hud-switch { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; background: #1a1b1f; padding: 12px 0; }
+.density-hud :is(button, select, input:not([type=range],[type=checkbox],[type=color])) { min-height: 34px; max-width: 100%; padding: 4px 8px; border: 1px solid #525056; border-radius: 4px; background: #292a30; color: #f1eef0; font: 500 13px/1.4 var(--font-sans); }
+.density-hud :is(button,select):not(:disabled):hover { border-color: #ff9786; }
+.density-hud :is(button,input,select,summary):focus-visible { outline: 2px solid #ffbcaa; outline-offset: 1px; }
+.density-hud :disabled { opacity: .58; }
+.hud-inspector fieldset { min-width: 0; margin: 0 0 8px; padding: 10px 0; border-top: 1px solid #413d43; }
+.hud-inspector legend { padding-right: 6px; }
+.hud-inspector label:not(.hud-switch) { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.hud-panel fieldset { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.hud-inspector .transfer-controls { gap: 6px; }
+.density-hud input[type=color] { width: 34px; height: 32px; }
+.density-hud p { margin: 6px 0; font-size: 13px; line-height: 1.45; }
+.density-hud .workspace-view { display: grid; grid-template-rows: minmax(0,1fr) auto; padding: 12px; min-width: 0; min-height: 0; background: radial-gradient(#38373b 1px, transparent 1px) center/12px 12px, #212125; }
+.density-hud .section-surface { container-type: size; display: grid; place-items: center; margin: 0; }
+.density-hud .hud-sheet, .density-hud .section-overlay { width: min(100cqw, calc(100cqh * var(--doc-ratio))); height: auto; aspect-ratio: var(--doc-ratio); }
+.hud-sheet { overflow: clip; box-shadow: 0 2px 12px #0008; }
+.density-hud .section-overlay { inset: auto; grid-area: 1/1; }
+.density-hud .hud-sheet { grid-area: 1/1; }
+.density-hud:not([data-panel=diagnostic]) [aria-label='Срез плотности'] { display: none; }
+.density-hud [aria-label='Срез плотности'] { max-height: 30dvh; overflow: auto; background: #1a1b1f; padding: 8px 12px; }
+.hud-status { min-height: calc(70px + env(safe-area-inset-bottom)); padding-right: 190px; padding-bottom: max(10px,env(safe-area-inset-bottom)); border-top: 1px solid #414246; }
+.hud-status b { font-size: 13px; }
+.hud-status p { margin: 0; }
+@media (max-width: 720px) {
+  .hud-head { gap: 6px 8px; padding: 8px; }
+  .hud-head h1 { font-size: 16px; }
+  .hud-head b { margin-left: auto; margin-right: 0; }
+  .hud-head button { flex: auto; }
+  .hud-body { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, .76fr); }
+  .hud-inspector { grid-row: 2; border: 0; border-top: 1px solid #414246; }
+  .density-hud .workspace-view { grid-row: 1; padding: 6px; }
+  .hud-status { display: block; align-content: center; padding-left: 8px; }
+  .density-hud .raster-params { grid-template-columns: 1fr 1fr; }
+}
+@media (pointer: coarse) {
+  .density-hud :is(button,select,input[type=color]) { min-height: 44px; }
+}
+
+.hud-body { grid-template-columns: minmax(15rem,19rem) minmax(0,1fr) minmax(16rem,19rem); grid-template-rows: minmax(0,1fr); }
+.hud-switch { display: none; }
+.hud-body > .workspace-view { grid-area: 1/2; }
+.hud-aux { grid-area: 1/3; min-width: 0; overflow: auto; padding: 12px; border-left: 1px solid #414246; background: #18191c; }
+.hud-aux fieldset { min-width: 0; padding: 8px 0; }
+.hud-aux [aria-label='Диагностика жеста'] { margin-top: 10px; border-top: 1px solid #414246; padding-top: 8px; }
+.hud-body h2 { margin: 12px 0; font-size: 15px; font-weight: 700; }
+.density-hud [aria-label='Срез плотности'] { display: block; }
+@media (min-width: 901px) {
+  .density-hud:not([data-panel=diagnostic]) [aria-label='Срез плотности'] { display: block; }
+}
+@media (max-width: 900px) {
+  .hud-body { grid-template-columns: 1fr; grid-template-rows: minmax(0,1fr) auto minmax(0,.75fr); }
+  .hud-body > .workspace-view { grid-area: 1/1; }
+  .hud-switch { display: flex; position: static; grid-area: 2/1; padding: 5px 12px; }
+  .hud-inspector, .hud-aux { grid-area: 3/1; padding: 6px 12px; }
+  .hud-body h2 { display: none; }
+  .density-hud:is([data-panel=brush],[data-panel=pigment],[data-panel=scene]) .hud-aux,
+  .density-hud:is([data-panel=reference],[data-panel=document],[data-panel=diagnostic]) .hud-inspector,
+  .density-hud:not([data-panel=brush]) [data-group=brush],
+  .density-hud:not([data-panel=pigment]) [data-group=pigment],
+  .density-hud:not([data-panel=scene]) [data-group=scene],
+  .density-hud:not([data-panel=reference]) [data-group=reference],
+  .density-hud:not([data-panel=document]) [data-group=document],
+  .density-hud:not([data-panel=diagnostic]) [data-group=diagnostic] { display: none; }
+}
+
+.hud-inspector, .hud-aux { container-type:inline-size; min-inline-size:0; scrollbar-gutter:stable; overflow-wrap:anywhere; }
+.hud-aux label { flex-wrap:wrap; max-inline-size:100%; }
+.hud-aux .raster-tools { inline-size:100%; min-inline-size:0; }
+.hud-aux .raster-params { grid-template-columns:repeat(auto-fit,minmax(min(100%,11rem),1fr)); }
+@container (max-width:20rem) {
+  .workspace-tools label, .hud-panel label { inline-size:100%; justify-content:space-between; }
+  .workspace-tools input:not([type=range]) { flex:1 1 7rem; min-inline-size:0; }
+}
+.density-hud .workspace-view { container:field-pane / size; background:#222124; }
+.density-hud [aria-label='Срез плотности'] { max-block-size:30cqh; }
+.density-hud .hud-status { max-block-size:18dvh; overflow:auto; }
+@media (min-width:590px) and (max-width:900px) and (max-height:650px) {
+  .hud-body { grid-template-columns:minmax(0,1fr) minmax(15rem,34%); grid-template-rows:auto minmax(0,1fr); }
+  .hud-body > .workspace-view { grid-area:1/1/span 2/2; }
+  .hud-switch { grid-area:1/2; flex-wrap:wrap; }
+  .hud-inspector,.hud-aux { grid-area:2/2; }
+}
+@media(max-height:550px) {
+  .hud-head { padding-block:3px; }
+  .density-hud .hud-status { min-height:42px; padding-block:4px; }
+  body:has(.density-hud:not([hidden])) .beta-launch { min-height:32px; bottom:4px; padding:4px 10px; }
+}

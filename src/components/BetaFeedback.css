@@ -1,0 +1,26 @@
+button.beta-launch { position: fixed; z-index: 40; bottom: max(12px, env(safe-area-inset-bottom)); right: max(12px, env(safe-area-inset-right)); min-height: 48px; padding: 10px 20px; background: #b71928; color: white; font: bold 16px/1.4 system-ui; border: 2px solid #ff9da4; border-radius: 8px; cursor: pointer; }
+.beta-launch:focus-visible, .beta-dialog :focus-visible { outline: 3px solid #ffcc62; outline-offset: 2px; }
+.beta-dialog { margin: auto; width: min(32rem, 94vw); max-height: 88dvh; overflow: auto; padding: 1.2rem; background: #242026; color: white; border: 1px solid #b9aeb2; border-radius: 8px; }
+.beta-dialog::backdrop { background: #000a; }
+.beta-dialog p, .beta-dialog fieldset, .beta-dialog label { display: block; margin: .6rem 0; }
+.beta-dialog fieldset { min-width: 0; }
+.beta-dialog textarea, .beta-dialog input[type=file], .beta-dialog video, .beta-dialog audio { display: block; width: 100%; }
+.beta-dialog textarea { min-height: 4rem; background: #fff; color: #151515; }
+.beta-dialog button { padding: .45rem .7rem; color: #fff; background: #4b4044; border: 1px solid #c0acb3; border-radius: 4px; }
+.beta-dialog button:disabled { opacity: .6; }
+@media print { .beta-launch, .beta-dialog { display: none !important; } }
+
+.beta-dialog { container:report / inline-size; max-block-size:calc(100dvh - 1rem); max-inline-size:calc(100dvw - 1rem); padding:clamp(.65rem,2vmin,1.25rem); overscroll-behavior:contain; scrollbar-gutter:stable; }
+.beta-dialog #beta-title { font-size:1.25rem; font-weight:650; }
+.beta-dialog fieldset fieldset { padding:.5rem; border-inline-start:2px solid #ae515e; background:#2b2529; }
+.beta-actions { position:sticky; bottom:0; display:flex; flex-wrap:wrap; gap:.5rem; padding-block:.5rem; background:#242026; border-top:1px solid #84676d; }
+.beta-actions button { min-height:36px; }
+@media (pointer:coarse) {
+  .beta-dialog :is(button,input[type=file]), .beta-dialog label:has(input[type=checkbox]) { min-block-size:44px; }
+  body:has(.surface-workspace) button.beta-launch,
+  body:has(.density-hud:not([hidden])) button.beta-launch { min-block-size:44px; }
+}
+@media (max-height:550px) {
+  .beta-dialog { scroll-padding-block-end:4.5rem; }
+}
+@container report (max-width:22rem) { .beta-actions button { flex:auto; } }

@@ -18,6 +18,8 @@ import { StudioDialog } from './components/UI'
 import { CloudDialog } from './components/CloudDialog'
 import { useCloudSync } from './hooks/useCloudSync'
 import type { ArtworkReport } from './lib/artwork-analysis'
+import type { QualityReport } from './lib/quality'
+import type { VisibleQuality } from './lib/quality/visible'
 import { runEnvironmentDiagnostics, type DeviceDiagnosticsReport } from './lib/diagnostics'
 import { BRUSH_ORDER, DEFAULT_BRUSHES } from './lib/brushes'
 import { blobToDataUrl, blobToImageData, makeVectorSvg, withGrayscale, withPngDpi, withPngIccProfile } from './lib/output'
@@ -74,7 +76,7 @@ export default function App() {
   ) as Record<BrushId, BrushConfig>)
   const [customPresets, setCustomPresets] = useState<BrushPreset[]>(() => Array.isArray(workspaceSettings.customPresets) ? workspaceSettings.customPresets : [])
   const [activeCustomIndex, setActiveCustomIndex] = useState<number | null>(null)
-  const [color, setColor] = useState(workspaceSettings.color ?? '#171914')
+  const [color, setColor] = useState(workspaceSettings.color ?? '#e8e0d8')
   const [symmetry, setSymmetry] = useState<SymmetryMode>('off')
   const [radialCount, setRadialCount] = useState(6)
   const [guide, setGuide] = useState<GuideMode>('none')
@@ -99,6 +101,9 @@ export default function App() {
   const [modal, setModal] = useState<ModalId>(null)
   const [notice, setNotice] = useState('')
   const [analysisReport, setAnalysisReport] = useState<ArtworkReport | null>(null)
+  const [qualityReport, setQualityReport] = useState<QualityReport | null>(null)
+  const [qualityStatus, setQualityStatus] = useState<VisibleQuality['status'] | null>(null)
+  const [qualityLimit, setQualityLimit] = useState<number | null>(null)
   const [diagnosticsReport, setDiagnosticsReport] = useState<DeviceDiagnosticsReport | null>(null)
   const [saveStatus, setSaveStatus] = useState('Только на этом устройстве')
   const [hydrated, setHydrated] = useState(false)
@@ -528,6 +533,10 @@ export default function App() {
     try {
       const report = studioRef.current.analyzeArtwork()
       setAnalysisReport(report)
+      const quality = studioRef.current.analyzeQuality()
+      setQualityStatus(quality.status)
+      setQualityReport(quality.status === 'ready' ? quality.report : null)
+      setQualityLimit(quality.status === 'limited' ? quality.maxNodes : null)
       setModal('analysis')
     } catch {
       showNotice('Не удалось выполнить проверку эскиза')
@@ -909,7 +918,7 @@ export default function App() {
 
       {notice && <div className="toast" role="status">{notice}</div>}
 
-      <AnalysisDialog open={modal === 'analysis'} onOpenChange={open => !open && setModal(null)} report={analysisReport} />
+      <AnalysisDialog open={modal === 'analysis'} onOpenChange={open => !open && setModal(null)} report={analysisReport} qualityReport={qualityReport} qualityStatus={qualityStatus} qualityLimit={qualityLimit} />
 
       <DiagnosticsDialog open={modal === 'diagnostics'} onOpenChange={open => !open && setModal(null)} report={diagnosticsReport} />
 

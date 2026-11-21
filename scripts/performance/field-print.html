@@ -1,0 +1,14 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>FieldPrint smoke</title>
+<div id="backdrop" style="background:magenta">Подложка рабочего пространства<canvas width="384" height="240"></canvas></div>
+<div id="controls"></div><script type="module">
+import React from 'react'
+import { createRoot } from 'react-dom/client'
+import FieldPrint from '/src/components/FieldPrint.tsx'
+const canvas = document.querySelector('canvas')
+canvas.getContext('2d').fillRect(0, 0, 384, 240)
+function Fixture() {
+  const [widthMm, onWidthMmChange] = React.useState(100)
+  return React.createElement(FieldPrint, { widthMm, onWidthMmChange, canvas: () => canvas })
+}
+createRoot(document.querySelector('#controls')).render(React.createElement(Fixture))
+</script></html>

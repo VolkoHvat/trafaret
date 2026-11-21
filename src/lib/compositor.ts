@@ -8,6 +8,8 @@ export interface StrokePreview {
   channel: 'content' | 'mask'
   eraser: boolean
   canvas: HTMLCanvasElement
+  // Conservative extent of the entire freehand stroke, not just its newest samples.
+  extent?: { x: number; y: number; width: number; height: number }
 }
 
 export interface RasterMovePreview {
@@ -31,12 +33,15 @@ export interface ComposeInput {
   scale?: number
   current?: StrokePreview | null
   rasterMove?: RasterMovePreview | null
+  dirty?: { x: number; y: number; width: number; height: number } | null
 }
 
 type BufferName = 'preview' | 'maskPreview' | 'masked' | 'clipped' | 'below'
 
 export class Compositor {
   private buffers: Partial<Record<BufferName, HTMLCanvasElement>> = {}
+
+  private regionBase?: { source: HTMLCanvasElement; version: number; width: number; height: number; extent: NonNullable<StrokePreview['extent']> }
 
   private obtain(name: BufferName, doc: DocModel) {
     const existing = this.buffers[name]
@@ -53,6 +58,7 @@ export class Compositor {
   }
 
   release() {
+    this.regionBase = undefined
     for (const name of Object.keys(this.buffers) as BufferName[]) {
       const canvas = this.buffers[name]
       if (canvas) {
@@ -66,13 +72,33 @@ export class Compositor {
   compose(input: ComposeInput) {
     const {
       target, doc, layers, activeLayerId, background, stencilMode,
-      onlyActive = false, scale = 1, current, rasterMove,
+      onlyActive = false, scale = 1, current, rasterMove, dirty,
     } = input
     const ctx = target.getContext('2d', { willReadFrequently: true })!
-    ctx.clearRect(0, 0, target.width, target.height)
-    if (background) {
-      ctx.fillStyle = stencilMode ? '#f7f6f0' : '#f3f1e9'
-      ctx.fillRect(0, 0, target.width, target.height)
+    const clip = dirty && dirty.width > 0 && dirty.height > 0
+      ? {
+          x: Math.max(0, Math.floor(dirty.x)),
+          y: Math.max(0, Math.floor(dirty.y)),
+          width: Math.min(doc.width, Math.ceil(dirty.x + dirty.width)) - Math.max(0, Math.floor(dirty.x)),
+          height: Math.min(doc.height, Math.ceil(dirty.y + dirty.height)) - Math.max(0, Math.floor(dirty.y)),
+        }
+      : null
+    if (!clip || clip.width <= 0 || clip.height <= 0) {
+      ctx.clearRect(0, 0, target.width, target.height)
+      if (background) {
+        ctx.fillStyle = stencilMode ? '#f7f6f0' : '#15161a'
+        ctx.fillRect(0, 0, target.width, target.height)
+      }
+    } else {
+      ctx.clearRect(clip.x, clip.y, clip.width, clip.height)
+      if (background) {
+        ctx.fillStyle = stencilMode ? '#f7f6f0' : '#15161a'
+        ctx.fillRect(clip.x, clip.y, clip.width, clip.height)
+      }
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(clip.x, clip.y, clip.width, clip.height)
+      ctx.clip()
     }
     let belowNeeded = false
     if (!onlyActive) {
@@ -93,12 +119,30 @@ export class Compositor {
       let source: HTMLCanvasElement | null = isPristineEmptyLayer(layer) && !contentPreview && !movePreview
         ? null
         : getLayerRenderCanvas(layer)
-      if (contentPreview || movePreview) {
+      if (contentPreview && current && !current.eraser && !rasterMove && layers.length === 1 &&
+          layer.kind === 'paint' && isPristineEmptyLayer(layer) && layer.opacity === 1 &&
+          layer.blend === 'source-over' && !layer.filters && !layer.mask && !layer.clipToBelow && !stencilMode) {
+        source = current.canvas
+      } else if (contentPreview || movePreview) {
         const preview = this.obtain('preview', doc)
         const pctx = preview.getContext('2d', { willReadFrequently: true })!
-        pctx.clearRect(0, 0, doc.width, doc.height)
-        pctx.drawImage(source!, 0, 0)
-        if (contentPreview && current) {
+        const extent = contentPreview && !current.eraser && !movePreview && layer.kind === 'paint' &&
+          !layer.filters && !layer.mask && layers.length === 1 ? current.extent : undefined
+        const base = this.regionBase
+        if (extent && base && base.source === source && base.version === layer.pixelVersion &&
+            base.width === doc.width && base.height === doc.height) {
+          const { x, y, width, height } = base.extent
+          pctx.clearRect(x, y, width, height)
+          pctx.drawImage(source!, x, y, width, height, x, y, width, height)
+        } else {
+          pctx.clearRect(0, 0, doc.width, doc.height)
+          pctx.drawImage(source!, 0, 0)
+        }
+        this.regionBase = extent ? { source: source!, version: layer.pixelVersion, width: doc.width, height: doc.height, extent } : undefined
+        if (extent && current) {
+          const { x, y, width, height } = extent
+          pctx.drawImage(current.canvas, x, y, width, height, x, y, width, height)
+        } else if (contentPreview && current) {
           pctx.save()
           pctx.globalCompositeOperation = current.eraser ? 'destination-out' : 'source-over'
           pctx.drawImage(current.canvas, 0, 0)
@@ -180,5 +224,6 @@ export class Compositor {
       hasBelow = true
     })
     ctx.restore()
+    if (clip) ctx.restore()
   }
 }

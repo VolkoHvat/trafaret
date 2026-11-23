@@ -22,7 +22,7 @@ try {
   const settle = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
   const idle = () => page.waitForFunction(() => !document.querySelector('fieldset').disabled)
   const click = name => page.getByRole('button', { name, exact: true }).click()
-  const ab = await pixels(); await click('B → A'); const ba = await pixels(); assert.notEqual(ba, ab)
+  await page.getByLabel('Инспектор').selectOption('all'); await click('A → B'); const ab = await pixels(); await click('B → A'); const ba = await pixels(); assert.notEqual(ba, ab)
   await click('A → B'); assert.equal(await pixels(), ab)
   const metrics = await page.getByText(/Контроль 384×240/).innerText()
   await click('Чистое поле'); const blank = await pixels(); assert.notEqual(blank, ab)
@@ -71,7 +71,7 @@ try {
   const bad = Buffer.from(data); bad[24] ^= 1; await upload(bad); await page.getByText('Повреждены данные поля').waitFor(); assert.equal(await pixels(), ba)
   await canvas.scrollIntoViewIfNeeded(); const center = await canvas.boundingBox(); await page.mouse.move(center.x + center.width / 2, center.y + center.height / 2)
   await page.mouse.down(); assert.notEqual(await pixels(), ba); assert.ok(await page.getByRole('button', { name: 'Экспорт поля' }).isDisabled())
-  await page.reload(); await page.mouse.up(); await page.getByText('Локальное поле загружено').waitFor(); assert.deepEqual(await file('Экспорт поля'), data)
+  await page.reload(); await page.mouse.up(); await page.getByLabel('Инспектор').selectOption('all'); await page.getByText('Локальное поле загружено').waitFor(); assert.deepEqual(await file('Экспорт поля'), data)
   await page.getByRole('combobox', { name: /^Кисть/ }).selectOption('nib'); await canvas.scrollIntoViewIfNeeded(); const area = await canvas.boundingBox(); await page.mouse.move(area.x + area.width * .2, area.y + area.height * .5); await page.mouse.down()
   await canvas.evaluate(c => {
     const r = c.getBoundingClientRect(); const events = Array.from({ length: 1400 }, (_, i) => new PointerEvent('pointermove', { bubbles: true, pointerId: 1, buttons: 1, clientX: r.x + r.width * (.2 + .5 * i / 1400), clientY: r.y + r.height * .5 }))

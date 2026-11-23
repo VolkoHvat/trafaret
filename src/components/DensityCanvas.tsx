@@ -8,7 +8,7 @@ import type { Size } from '../lib/field-size'
 import { capture, replacement, tileRect, TileHistory, writeTile } from '../lib/field-tiles'
 import type { Patch } from '../lib/field-tiles'
 import { defaults, equilibrate, checkImage, imageLimit, pack, unpack, type Workspace } from '../lib/field-workspace'
-import { restoreWorkspace, saveBatch, WorkspaceConflict } from '../lib/field-workspace-store'
+import { preferredWorkspace, restoreWorkspace, saveBatch, WorkspaceConflict } from '../lib/field-workspace-store'
 import { PigmentField, pigmentBoundary, type PigmentDelta } from '../lib/pigment'
 import { mixingBrush } from '../lib/pigment-mixing'
 import { composite, depleted, hexPigment } from '../lib/pigment-view'
@@ -30,12 +30,19 @@ function download(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob), a = document.createElement('a')
   a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
+import BrushProof from './BrushProof'
+import BrandWordmark from './BrandWordmark'
 import LocalSurface from './LocalSurface'
 import CompositionTool from './CompositionTool'
 import { fineBrush, pigmentSpan } from '../lib/fine-line'
 import { useTattooStyleTool } from './TattooStyleTool'
 export default function DensityCanvas() {
-  const [composition,setComposition]=useState<ImageData|null>(null), compositionButton=useRef<HTMLButtonElement>(null)
+  const [size,setSize]=useState<Size|null>(()=>{const params=new URLSearchParams(location.search);return params.has('field')?(params.get('field')==='2048'?LARGE:SMALL):null})
+  useEffect(()=>{if(size)return;let live=true;preferredWorkspace().then(s=>{if(live)setSize(s)},()=>{if(live)setSize(SMALL)});return()=>{live=false}},[size])
+  return size?<DrawingStudio size={size}/>:<p role="status">Открываем мастерскую…</p>
+}
+function DrawingStudio({size}:{size:Size}) {
+  const [composition,setComposition]=useState<ImageData|null>(null), compositionButton=useRef<HTMLButtonElement>(null), fittingOpener=useRef<HTMLButtonElement|null>(null)
   function reviewComposition(){
     if(!canvas.current)return
     const copy=document.createElement('canvas'), scale=Math.min(1,512/WIDTH,512/HEIGHT)
@@ -45,12 +52,12 @@ export default function DensityCanvas() {
     setComposition(ctx.getImageData(0,0,copy.width,copy.height))
   }
   const [sectionImage,setSectionImage]=useState<ImageData|null>(null)
-  const size: Size = new URLSearchParams(location.search).get('field') === '2048' ? LARGE : SMALL
   const [surface,setSurface]=useState(()=>new URLSearchParams(location.search).has('surface'))
   function switchView(next:boolean){const url=new URL(location.href);if(next)url.searchParams.set('surface','1');else url.searchParams.delete('surface');window.history.replaceState(null,'',url);setSurface(next)}
   const { width: WIDTH, height: HEIGHT } = size
   const [demo] = useState(() => demonstration(DEFAULT))
-  const [field] = useState(() => size === SMALL ? demo.ab.slice() : freshField(size))
+  const [field] = useState(() => freshField(size))
+  const [paper,setPaper]=useState('warm')
   const [manualBrush, setManualBrush] = useState<Brush>(DEFAULT)
   const [targetMm,setTargetMm]=useState<number|null>(size===LARGE?.25:null)
   function setBrush(next:Brush){setTargetMm(null);setManualBrush(next)}
@@ -84,7 +91,7 @@ export default function DensityCanvas() {
     if(importing.current||active.current||!ready)return
     const next={...metaRef.current,...change};metaRef.current=next;setMeta(next);void persist(new Map(),next)
   }
-  const [scene, setScene] = useState('A → B')
+  const [scene, setScene] = useState('Чистое поле')
   const [status, setStatus] = useState('Чтение локального поля…')
   const [ready, setReady] = useState(false), [busy, setBusy] = useState(false)
   const [history,setHistory] = useState(() => new TileHistory())
@@ -107,7 +114,7 @@ export default function DensityCanvas() {
   const replaceInk=useRef(false)
   const saving = useRef(false), pending = useRef(new SharedFieldBatch(field)), [inkRevision,bumpInk]=useState(0)
   const [durable,setDurable] = useState(true), [problem,setProblem]=useState<''|'conflict'|'error'>('')
-  const revision=useRef(0), failed=useRef(false)
+  const revision=useRef(0), failed=useRef(false), blankBase=useRef<Patch|null>(null)
   const unsaved=()=>saving.current||failed.current||!!pending.current.dirty||!!pendingMeta.current
   useEffect(()=>{
     const warn=(e:BeforeUnloadEvent)=>{if(unsaved()||active.current||importing.current){e.preventDefault();e.returnValue=''}}
@@ -141,21 +148,25 @@ export default function DensityCanvas() {
   }, [field, mode, WIDTH, HEIGHT])
   useEffect(() => {
     let live = true
-    const staged=field.slice()
+    // Old 384 workspaces store only the tiles that differ from the A/B base.
+    const staged=size===SMALL?demo.ab.slice():freshField(size)
     restoreWorkspace(staged).then(async ({data,metadata,revision:rev}) => {
       if(metadata?.reference)await checkImage(metadata.reference)
       if (!live) return
-      revision.current=rev;field.set(staged)
+      revision.current=rev
+      if(size===SMALL&&!data&&!metadata&&rev===0)blankBase.current=replacement(staged,freshField(size))
+      field.set(staged)
       if(metadata){restoreColor(metadata);metaRef.current=metadata;setMeta(metadata)}
       if (data) setScene('Восстановлено'); else if (size === LARGE) setScene('Чистое поле')
       setStatus(data||metadata ? 'Локальное поле загружено' : 'Новый документ');setReady(true)
     }).catch(() => { if (live) setStatus('Не удалось прочитать локальный документ. Перезагрузите страницу; сохранённая копия не изменена.') })
     return () => { live = false }
-  }, [field, size,restoreColor])
+  }, [field, size,restoreColor,demo])
   useEffect(() => { if (ready) paint() }, [ready, paint])
   async function persist(patch: Patch, metadata:Workspace|null=null,delta?:PigmentDelta,side:'before'|'after'='after',whole=false) {
     if(metadata){pendingMeta.current={...metadata};if(!whole)delete pendingMeta.current.pigment}
     if(whole)replaceInk.current=true
+    if(blankBase.current){pending.current.collect(blankBase.current);blankBase.current=null}
     const start = performance.now();pending.current.collect(patch,delta,side)
     if(canvas.current){canvas.current.dataset.patchBytes=String([...patch.values()].reduce((n,a)=>n+a.byteLength,0)); canvas.current.dataset.saveCopyMs=String(performance.now()-start); canvas.current.dataset.historyBytes=String(history.bytes)}
     if (saving.current||failed.current) return
@@ -326,7 +337,7 @@ export default function DensityCanvas() {
     if (ended && s.queue.length <= 8) { cancelAnimationFrame(s.frame); drain(s) }
     else if (!s.frame) s.frame = requestAnimationFrame(() => drain(s))
   }
-  const [panel,setPanel]=useState('brush')
+  const [panel,setPanel]=useState('shelf'), printPanel=useRef<HTMLFieldSetElement>(null)
   const locked = busy || !ready || !!problem
   function choose(kind:'document'|'image'){
     const input=picker.current;if(!input)return
@@ -338,18 +349,26 @@ export default function DensityCanvas() {
   const palette=<fieldset disabled={locked||mode==='stencil'}><legend>Пигмент</legend>{bufferControl}<label>Режим пигмента <select value={inkTool} onChange={e=>setInkTool(e.target.value as typeof inkTool)}><option value="rho">Только плотность</option><option value="line">Цветная линия</option><option value="fill">Заливка</option><option value="mix">Смешение пигментов</option><option value="material">Вещество поля</option></select></label>{inkTool==='material'&&<><label><input type="checkbox" checked={newPaint} onChange={e=>setNewPaint(e.target.checked)}/>Добавлять новый пигмент</label>{newPaint&&<><label>Цвет вещества <input type="color" value={mixColor} onChange={e=>setMixColor(e.target.value)}/></label><label>Подача <input type="range" min="0.05" max="1" step="0.05" value={mixWeight} onChange={e=>setMixWeight(+e.target.value)}/></label></>}<p>Без подачи кисть перемещает только ранее нанесённую смесь; обычные sRGB-слои остаются на месте.</p></>}{inkTool!=='mix'&&inkTool!=='material'&&<><label>Цвет линии <input type="color" value={lineColor} onChange={e=>setLineColor(e.target.value)}/></label><label>Цвет заливки <input type="color" value={fillColor} onChange={e=>setFillColor(e.target.value)}/></label></>}{inkTool==='mix'&&<><label>Цвет пигмента <input type="color" value={mixColor} onChange={e=>setMixColor(e.target.value)}/></label><label>Вес {Math.round(mixWeight*100)}% <input type="range" min="0.05" max="1" step="0.05" value={mixWeight} onChange={e=>setMixWeight(+e.target.value)}/></label><label>Канал <select value={mixTool} onChange={e=>setMixTool(e.target.value as typeof mixTool)}><option value="line">Цветная линия</option><option value="fill">Цветная заливка</option></select></label><p role="note">Внимание: условная симуляция, не прогноз заживления.</p></>}</fieldset>
   return <><dialog ref={fillDialog} onCancel={()=>finishFill(false)}><p>{stagedMix.current?'Предпросмотр смеси':'Предпросмотр заливки'} · {fillInfo}</p><canvas style={{maxWidth:"min(80vw, 65vh)",height:"auto"}} ref={fillCanvas} width={WIDTH} height={HEIGHT}/><div><button onClick={()=>finishFill(true)}>{stagedMix.current?'Применить смесь':'Применить заливку'}</button><button onClick={()=>finishFill(false)}>{stagedMix.current?'Отменить смесь':'Отменить заливку'}</button></div></dialog>{surface&&ready&&<SurfaceWorkspace bufferMode={bufferMode} beginMaterial={beginMaterial} field={field} commit={commitStroke} projection={mode} pigment={pigment.current} inkRevision={inkRevision} palette={<>{palette}{styleTool}</>} filling={filling&&mode==='tone'} fillAt={fillAt} canUndo={!!history.undoCount} canRedo={!!history.redoCount} travel={travel} body={meta.surfaceBody??bodyDefaults} setBody={surfaceBody=>updateMeta({surfaceBody})} replace={(next,surfaceBody)=>{const patch=replacement(field,next), metadata={...metaRef.current,surfaceBody};delete metadata.pigment;restoreColor(metadata);setHistory(new TileHistory());metaRef.current=metadata;setMeta(metadata);paint();void persist(patch,metadata,undefined,'after',true)}} leave={()=>switchView(false)} locked={locked} status={status}/>}
     {composition&&<CompositionTool image={composition} neutral={project(1,mode)} widthMm={meta.widthMm} leave={()=>{setComposition(null);requestAnimationFrame(()=>compositionButton.current?.focus())}}/>}
-    {sectionImage&&<LocalSurface image={sectionImage} widthMm={meta.widthMm} neutral={project(1,mode)} leave={()=>setSectionImage(null)}/>}
+    {sectionImage&&<LocalSurface image={sectionImage} widthMm={meta.widthMm} neutral={project(1,mode)} leave={()=>{setSectionImage(null);requestAnimationFrame(()=>fittingOpener.current?.focus())}}/>}
     <main hidden={!!composition||!!sectionImage||surface&&ready} className="transfer-page density-hud" style={{'--doc-ratio':WIDTH/HEIGHT} as CSSProperties} data-panel={panel}>
-    <header className="hud-head"><div><small>TRAFARET / BETA</small><h1>Перенос плотности</h1></div><b>Документ {WIDTH}×{HEIGHT}</b>
-    <button ref={compositionButton} disabled={locked} onClick={reviewComposition}>Композиция</button>
-    {size===LARGE&&<button disabled={locked} onClick={()=>{const pixels=canvas.current?.getContext('2d')?.getImageData(0,0,WIDTH,HEIGHT);if(pixels)setSectionImage(pixels)}}>Участок тела</button>}
+    <header className="hud-head"><div><BrandWordmark/><h1>Рисунок · {meta.name.trim()||'Без названия'}</h1></div><b>{WIDTH} × {HEIGHT} px</b>
+    <button ref={compositionButton} disabled={locked} onClick={reviewComposition} aria-label="Композиция" title="Издали · композиция и силуэт">Издали</button>
+    <button disabled={locked} onClick={e=>{fittingOpener.current=e.currentTarget;const pixels=canvas.current?.getContext('2d')?.getImageData(0,0,WIDTH,HEIGHT);if(pixels)setSectionImage(pixels)}}>Примерить</button>
+    <button disabled={locked} onClick={()=>{setPanel('document');requestAnimationFrame(()=>printPanel.current?.querySelector('button')?.focus())}}>На печать</button></header>
+    <section className="hud-body" aria-label="Студия рисунка"><div className="hud-switch"><label>Инспектор <select value={panel} onChange={e=>setPanel(e.target.value)}><option value="shelf">Рабочая полка</option><option value="brush">Кисть и проекция</option><option value="pigment">Цвет линии и заливки</option><option value="scene">Сцена и история</option><option value="reference">Изображение → линворк</option><option value="document">Документ и печать</option><option value="diagnostic">Жест и срез плотности</option><option value="all">Все инструменты</option></select></label></div>
+    <aside className="hud-inspector"><fieldset data-group="shelf" className="work-shelf" disabled={locked}><legend>Инструмент в руке</legend>
+      <strong>{tool==='pan'?'Панорама':tool==='restore'?'Восстановление':filling?'Заливка':brush.shape==='nib'?'Перо 45°':brush.shape==='refill'?'Обратное заполнение':'Круглая кисть'}</strong>
+      {tool==='draw'&&!filling&&(inkTool==='line'||inkTool==='rho'||mode==='stencil')?<BrushProof brush={brush} mode={mode} color={inkTool==='line'?lineColor:null}/>:<p>Результат зависит от содержимого поля.</p>}
+      <label>Радиус кисти <output>{brush.radius} px</output><input aria-label="Радиус кисти" type="range" min="1" max="14" value={brush.radius} onChange={e=>setBrush({...brush,radius:+e.target.value})}/></label>
+      <label>Пигмент линии <input disabled={mode==='stencil'} type="color" value={lineColor} onChange={e=>{setLineColor(e.target.value);setInkTool('line');setTool('draw')}}/></label>
+      <small>{mode==='stencil'?'Трафарет · только плотность':inkTool==='rho'?'Без пигмента · плотность':inkTool==='line'?lineColor:inkTool==='material'?'Вещество поля':inkTool==='mix'?'Смешение пигментов':'Заливка'}</small>
+      <button onClick={()=>setPanel('brush')}>Настроить кисть</button></fieldset>
+      <section data-group="document">
+    {size===LARGE&&<button disabled={locked} onClick={e=>{fittingOpener.current=e.currentTarget;const pixels=canvas.current?.getContext('2d')?.getImageData(0,0,WIDTH,HEIGHT);if(pixels)setSectionImage(pixels)}}>Участок тела</button>}
     <button disabled={locked} onClick={()=>switchView(true)}>3D-поверхность</button>
-    <button disabled={locked || !durable} onClick={()=>{ location.search = size === SMALL ? '?field=2048' : '' }}>{size === SMALL ? 'Основная студия · открыть 2048×2048' : 'Открыть 384×240'}</button></header>
-    <section className="hud-body" aria-label="Опыт с пересечением">
-    <label className="hud-switch">Инспектор <select value={panel} onChange={e=>setPanel(e.target.value)}><option value="brush">Кисть и проекция</option><option value="pigment">Цвет линии и заливки</option><option value="scene">Сцена и история</option><option value="reference">Изображение → линворк</option><option value="document">Документ и печать</option><option value="diagnostic">Жест и срез плотности</option></select></label>
-    <aside className="hud-inspector"><h2>Инструменты</h2>
+    <button disabled={locked || !durable} onClick={()=>{ location.search = size === SMALL ? '?field=2048' : '?field=384' }}>{size === SMALL ? 'Основная студия · открыть 2048×2048' : 'Открыть 384×240'}</button></section>
     <div className="hud-panel" data-group="pigment">{palette}{styleTool}</div>
-    <fieldset disabled={locked} className="transfer-controls" data-group="scene"><button onClick={() => replace(size === SMALL ? demo.ab : demoOrder(DEFAULT,size,false), 'A → B')}>A → B</button><button onClick={() => replace(size === SMALL ? demo.ba : demoOrder(DEFAULT,size,true), 'B → A')}>B → A</button><button onClick={() => replace(freshField(size), 'Чистое поле')}>Чистое поле</button><button disabled={!history.undoCount} onClick={() => travel(false)}>Шаг назад</button><button disabled={!history.redoCount} onClick={() => travel(true)}>Шаг вперёд</button></fieldset>
+    <fieldset disabled={locked} className="transfer-controls" data-group="scene"><button onClick={() => replace(size === SMALL ? demo.ab : demoOrder(DEFAULT,size,false), 'A → B')}>A → B</button><button onClick={() => replace(size === SMALL ? demo.ba : demoOrder(DEFAULT,size,true), 'B → A')}>B → A</button><button onClick={() => replace(freshField(size), 'Чистое поле')}>Чистое поле</button></fieldset>
     <fieldset disabled={locked} className="transfer-controls" data-group="brush"><label>Инструмент <select value={tool} onChange={e=>setTool(e.target.value as typeof tool)}><option value="draw">Рисовать</option><option value="restore">Восстановить к ρ=1</option><option value="pan">Панорама</option></select></label>
       <button onClick={()=>zoomBy(.5)} disabled={displayZoom<=1}>Уменьшить</button><output>{displayZoom*100}%</output><button onClick={()=>zoomBy(2)} disabled={displayZoom>=8}>Увеличить</button><button onClick={resetView}>Вписать</button>
     </fieldset>
@@ -362,12 +381,12 @@ export default function DensityCanvas() {
     {problem&&<section aria-label="Восстановление документа"><p>Автосохранение остановлено. Чтобы оставить обе версии, сначала нажмите «Сохранить документ»: вы скачаете .tfw этой вкладки. Открытие актуальной версии заменит её только здесь.</p>
       <button disabled={busy} onClick={()=>void openLatest()}>Открыть актуальную версию</button>
       {problem==='error'&&<button disabled={busy} onClick={()=>{failed.current=false;setProblem('');void persist(new Map())}}>Повторить сохранение</button>}</section>}
-</aside><aside className="hud-aux"><h2>Документ и вывод</h2>
+<div className="hud-aux">
     <fieldset disabled={locked} className="transfer-controls workspace-tools" data-group="document"><label>Имя документа <input maxLength={100} value={meta.name} onChange={e=>updateMeta({name:e.target.value})}/></label>
     </fieldset>
     <fieldset disabled={locked} className="transfer-controls" data-group="document"><button onClick={() => { if (!active.current) download(new Blob([encodeField(field)]), 'поле.tfd') }}>Экспорт поля</button><button disabled={!durable} onClick={() => choose('document')}>Импорт поля</button><button disabled={!durable} onClick={()=>{if(unsaved()||!window.confirm('Создать новый документ вместо текущего? Сохраните отдельную копию, если она нужна.'))return;const next=defaults(),patch=replacement(field,freshField(size));setHistory(new TileHistory());setLast(null);stopReplay();setReport('');setScene('Чистое поле');restoreColor(next);metaRef.current=next;setMeta(next);resetView();paint();void persist(patch,next,undefined,'after',true)}}>Новый документ</button><button disabled={!durable} onClick={()=>choose('document')}>Открыть документ</button><input hidden type="file" accept=".tfd,.tfw" ref={picker} onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; void load(file) }}/><button onClick={() => { if (!active.current) canvas.current?.toBlob(blob => { if (blob) download(blob, 'проекция.png') }, 'image/png') }}>Экспорт PNG</button></fieldset>
     <button data-group="document" disabled={busy||!ready} onClick={exportDocument}>Сохранить документ</button>
-    <fieldset data-group="document" disabled={locked}><FieldPrint canvas={()=>canvas.current} widthMm={meta.widthMm} onWidthMmChange={n=>{if(Number.isFinite(n)&&n>0&&n<=2000)updateMeta({widthMm:n})}}/></fieldset>
+    <fieldset ref={printPanel} data-group="document" disabled={locked}><FieldPrint canvas={()=>canvas.current} widthMm={meta.widthMm} onWidthMmChange={n=>{if(Number.isFinite(n)&&n>0&&n<=2000)updateMeta({widthMm:n})}}/></fieldset>
 <fieldset disabled={locked} className="transfer-controls" data-group="reference"><legend>Подложка и линворк</legend>
       <button disabled={!durable} onClick={()=>choose('image')}>Импорт PNG/JPEG reference</button><label>Непрозрачность <input type="range" min="0" max="1" step="0.01" disabled={!meta.reference} value={meta.opacity} onChange={e=>updateMeta({opacity:Number(e.target.value)})}/></label><button disabled={!meta.reference} onClick={()=>setReferenceHidden(!referenceHidden)}>{referenceHidden?'Показать':'Скрыть'} reference</button><button disabled={!meta.reference} onClick={()=>{setReferenceHidden(false);updateMeta({reference:null})}}>Удалить reference</button>
       {meta.reference&&<RasterTools key={meta.reference} reference={meta.reference} width={WIDTH} height={HEIGHT} commit={commitSegments}/>}
@@ -376,7 +395,7 @@ export default function DensityCanvas() {
     {record && <><p>Пером проведите медленную петлю с резким разворотом. Пройдите точно по линии, затем рядом. Сделайте короткие касания. После каждого жеста сравните повтор до следующего касания. Давление только записывается.</p>
     {last && <><p data-gesture-summary>Источник: {last.source}; кисть: {last.brush.shape??'round'} {last.brush.radius}/{last.brush.buffer}; точек: {last.samples.length}; пакетов: {last.packets}; пик очереди до ограничения: {last.peak}; отброшено: {last.dropped}. {last.cancelled?'Отменена. ':''}{last.reason}{last.dropped?' Прорежена.':''}{last.available?'Полная запись.':''}</p>
     <details><summary>Начало и конец записи (XY, мс, давление)</summary><pre>{[last.samples[0],last.samples.at(-1)].map(p=>p&&`${p.x.toFixed(2)}, ${p.y.toFixed(2)} · ${p.time?.toFixed(2)} · ${p.pressure}`).join('\n')}</pre></details>
-    <button disabled={locked||!last.available} onClick={compare}>Повторить и сравнить</button><p data-gesture-report>{report}</p></>}</>}</section></aside>
-    <div className="workspace-view" ref={viewport}><DensitySection size={size} gesture={last} locked={locked||tool!=='draw'}><div className="hud-sheet"><div className="workspace-plane"><canvas tabIndex={0} onKeyDown={e=>{if(tool!=='pan'||locked)return;const d:Record<string,number[]>={ArrowRight:[-10,0],ArrowLeft:[10,0],ArrowDown:[0,-10],ArrowUp:[0,10]};if(d[e.key]){e.preventDefault();navigate(view.current.zoom,view.current.x+d[e.key][0],view.current.y+d[e.key][1])}}} ref={canvas} width={WIDTH} height={HEIGHT} aria-label="Поле плотности" onPointerDown={down} onPointerMove={e => advance(e, false)} onPointerUp={e => advance(e, true)} onPointerCancel={e => { if (active.current?.id === e.pointerId) cancel() }} onLostPointerCapture={e => { if(drag.current?.id===e.pointerId)drag.current=null; if (active.current?.id === e.pointerId && !active.current.ended) cancel() }} />{meta.reference&&!referenceHidden&&<img className="workspace-reference" src={meta.reference} alt="Локальная подложка" draggable={false} style={{opacity:meta.opacity}}/>}</div></div></DensitySection></div>
+    <button disabled={locked||!last.available} onClick={compare}>Повторить и сравнить</button><p data-gesture-report>{report}</p></>}</>}</section></div></aside>
+    <div className="workspace-view" ref={viewport} data-paper={paper}><div className="sheet-bar"><b>Лист / {mode==='tone'?'тон':'трафарет'}</b><label>Бумага · вид <select value={paper} onChange={e=>setPaper(e.target.value)}><option value="warm">Тёплая</option><option value="ash">Пепельная</option><option value="raw">Без коррекции</option></select></label><button aria-label="Шаг назад" title="Шаг назад" disabled={locked||!history.undoCount} onClick={()=>travel(false)}><span>Шаг назад</span></button><button aria-label="Шаг вперёд" title="Шаг вперёд" disabled={locked||!history.redoCount} onClick={()=>travel(true)}><span>Шаг вперёд</span></button></div><DensitySection size={size} gesture={panel==='diagnostic'||panel==='all'?last:null} locked={locked||tool!=='draw'}><div className="hud-sheet"><div className="workspace-plane"><canvas tabIndex={0} onKeyDown={e=>{if(tool!=='pan'||locked)return;const d:Record<string,number[]>={ArrowRight:[-10,0],ArrowLeft:[10,0],ArrowDown:[0,-10],ArrowUp:[0,10]};if(d[e.key]){e.preventDefault();navigate(view.current.zoom,view.current.x+d[e.key][0],view.current.y+d[e.key][1])}}} ref={canvas} width={WIDTH} height={HEIGHT} aria-label="Поле плотности" onPointerDown={down} onPointerMove={e => advance(e, false)} onPointerUp={e => advance(e, true)} onPointerCancel={e => { if (active.current?.id === e.pointerId) cancel() }} onLostPointerCapture={e => { if(drag.current?.id===e.pointerId)drag.current=null; if (active.current?.id === e.pointerId && !active.current.ended) cancel() }} />{meta.reference&&!referenceHidden&&<img className="workspace-reference" src={meta.reference} alt="Локальная подложка" draggable={false} style={{opacity:meta.opacity}}/>}</div></div></DensitySection></div>
     </section><footer className="hud-status"><b>{scene}</b><p role="status">{status}</p></footer></main></>
 }

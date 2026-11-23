@@ -7,6 +7,13 @@ import { defaults, workspace, type Workspace } from './field-workspace'
 
 const slot=createStore('trafaret-density-2','documents')
 export class WorkspaceConflict extends Error {}
+export function preferredWorkspace() {
+  return slot('readonly',store=>new Promise<typeof SMALL|typeof LARGE>((resolve,reject)=>{
+    const legacy=store.getKey('current'),small=store.getKey(IDBKeyRange.bound('384/','384/\uffff')),large=store.getKey(IDBKeyRange.bound('2048/','2048/\uffff'))
+    store.transaction.onabort=()=>reject(store.transaction.error)
+    store.transaction.oncomplete=()=>resolve(!legacy.result&&!small.result&&large.result?LARGE:SMALL)
+  }))
+}
 function revision(value:unknown):number {
   if(value===undefined)return 0
   if(typeof value!=='number'||!Number.isSafeInteger(value)||value<0||value===Number.MAX_SAFE_INTEGER)throw Error('Повреждена ревизия документа')

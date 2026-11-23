@@ -1,10 +1,18 @@
-@import '@fontsource-variable/manrope';
+/* Onest: google/fonts, ofl/onest; full variable source, lossless WOFF2. */
 @import '@fontsource/ibm-plex-mono/400.css';
 @import '@fontsource/ibm-plex-mono/500.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@font-face {
+  font-family: Onest;
+  src: url('/fonts/onest-variable.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
 
 @layer base {
   :root {
@@ -58,7 +66,16 @@
     --canvas-grid: rgb(241 233 228 / 3.5%);
     --document-shadow: rgb(0 0 0 / 62%);
     --overlay: rgb(8 6 7 / 78%);
-    --font-sans: 'Manrope Variable', 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-sans: Onest, system-ui, sans-serif;
+    --hud-body: .9375rem;
+    --hud-control: .875rem;
+    --hud-caption: .8125rem;
+    --hud-leading: 1.45;
+    --hud-digits: tabular-nums;
+    --hud-metal: #18191b;
+    --hud-paper: #d4cec2;
+    --hud-ink: #222321;
+    --hud-scarlet: #dd5059;
     --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
   }
 

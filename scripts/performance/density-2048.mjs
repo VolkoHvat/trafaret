@@ -10,7 +10,7 @@ try {
   const page = await browser.newPage({viewport:{width:1200,height:1100},serviceWorkers:'block'})
   const cdp=await page.context().newCDPSession(page), base=`http://127.0.0.1:${server.httpServer.address().port}/`
   const canvas=page.getByLabel('Поле плотности',{exact:true}), click=n=>page.getByRole('button',{name:n,exact:true}).click()
-  const idle=()=>page.waitForFunction(()=>document.querySelector('fieldset')?.disabled === false)
+  const idle=async()=>{await page.waitForFunction(()=>document.querySelector('fieldset')?.disabled === false);await page.getByLabel('Инспектор').selectOption('all')}
   const saved=()=>page.getByText('Сохранено локально',{exact:true}).waitFor()
   const hash=async()=>canvas.evaluate(async c=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',c.getContext('2d').getImageData(0,0,c.width,c.height).data)),x=>x.toString(16).padStart(2,'0')).join(''))
   const exportFile=async name=>{const [d]=await Promise.all([page.waitForEvent('download'),click(name)]);return readFile(await d.path())}

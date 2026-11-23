@@ -17,9 +17,9 @@ const lockfile = JSON.parse(readFileSync(new URL('../../package-lock.json', impo
 describe('release metadata', () => {
   it('keeps npm, lockfile and the published Windows artifact aligned', () => {
     expect(packageJson.name).toBe('trafaret')
-    expect(packageJson.version).toBe('2.0.0-beta.3')
+    expect(packageJson.version).toBe('2.0.0-beta.4')
     const android = readFileSync(new URL('../../android/app/build.gradle', import.meta.url), 'utf8')
-    expect(android).toMatch(/^\s*versionCode 7\s*$/m)
+    expect(android).toMatch(/^\s*versionCode 8\s*$/m)
     expect(android).toContain(`versionName "${packageJson.version}"`)
     expect(lockfile.name).toBe(packageJson.name)
     expect(lockfile.version).toBe(packageJson.version)

@@ -1,102 +1,18 @@
 @import './studio-chrome.css';
-
-.density-hud:not([hidden]) {
-  display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
-  max-width: none; height: 100dvh; padding: 0; overflow: clip;
-  background: #101114; color: #ecebed; font-size: 14px;
-}
-.density-hud [hidden] { display: none !important; }
-.hud-head, .hud-status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; background: #17181b; padding: 10px 16px; }
-.hud-head { border-bottom: 1px solid #414246; }
-.hud-head h1 { font-size: 19px; line-height: 1.25; }
-.hud-head small, .hud-switch, .density-hud legend { color: #ff9786; font: 500 11px/1.5 var(--font-mono); }
-.hud-head b { margin-right: auto; color: #d3cacc; font: 12px var(--font-mono); }
-.hud-body { display: grid; grid-template-columns: minmax(17rem, 21rem) minmax(0,1fr); min-height: 0; }
-.hud-inspector { overflow: auto; overscroll-behavior: contain; padding: 0 14px 12px; background: #1a1b1f; border-right: 1px solid #414246; }
-.hud-switch { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; background: #1a1b1f; padding: 12px 0; }
-.density-hud :is(button, select, input:not([type=range],[type=checkbox],[type=color])) { min-height: 34px; max-width: 100%; padding: 4px 8px; border: 1px solid #525056; border-radius: 4px; background: #292a30; color: #f1eef0; font: 500 13px/1.4 var(--font-sans); }
-.density-hud :is(button,select):not(:disabled):hover { border-color: #ff9786; }
-.density-hud :is(button,input,select,summary):focus-visible { outline: 2px solid #ffbcaa; outline-offset: 1px; }
-.density-hud :disabled { opacity: .58; }
-.hud-inspector fieldset { min-width: 0; margin: 0 0 8px; padding: 10px 0; border-top: 1px solid #413d43; }
-.hud-inspector legend { padding-right: 6px; }
-.hud-inspector label:not(.hud-switch) { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.hud-panel fieldset { display: flex; flex-wrap: wrap; gap: 8px 14px; }
-.hud-inspector .transfer-controls { gap: 6px; }
-.density-hud input[type=color] { width: 34px; height: 32px; }
-.density-hud p { margin: 6px 0; font-size: 13px; line-height: 1.45; }
-.density-hud .workspace-view { display: grid; grid-template-rows: minmax(0,1fr) auto; padding: 12px; min-width: 0; min-height: 0; background: radial-gradient(#38373b 1px, transparent 1px) center/12px 12px, #212125; }
-.density-hud .section-surface { container-type: size; display: grid; place-items: center; margin: 0; }
-.density-hud .hud-sheet, .density-hud .section-overlay { width: min(100cqw, calc(100cqh * var(--doc-ratio))); height: auto; aspect-ratio: var(--doc-ratio); }
-.hud-sheet { overflow: clip; box-shadow: 0 2px 12px #0008; }
-.density-hud .section-overlay { inset: auto; grid-area: 1/1; }
-.density-hud .hud-sheet { grid-area: 1/1; }
-.density-hud:not([data-panel=diagnostic]) [aria-label='Срез плотности'] { display: none; }
-.density-hud [aria-label='Срез плотности'] { max-height: 30dvh; overflow: auto; background: #1a1b1f; padding: 8px 12px; }
-.hud-status { min-height: calc(70px + env(safe-area-inset-bottom)); padding-right: 190px; padding-bottom: max(10px,env(safe-area-inset-bottom)); border-top: 1px solid #414246; }
-.hud-status b { font-size: 13px; }
-.hud-status p { margin: 0; }
-@media (max-width: 720px) {
-  .hud-head { gap: 6px 8px; padding: 8px; }
-  .hud-head h1 { font-size: 16px; }
-  .hud-head b { margin-left: auto; margin-right: 0; }
-  .hud-head button { flex: auto; }
-  .hud-body { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, .76fr); }
-  .hud-inspector { grid-row: 2; border: 0; border-top: 1px solid #414246; }
-  .density-hud .workspace-view { grid-row: 1; padding: 6px; }
-  .hud-status { display: block; align-content: center; padding-left: 8px; }
-  .density-hud .raster-params { grid-template-columns: 1fr 1fr; }
-}
-@media (pointer: coarse) {
-  .density-hud :is(button,select,input[type=color]) { min-height: 44px; }
-}
-
-.hud-body { grid-template-columns: minmax(15rem,19rem) minmax(0,1fr) minmax(16rem,19rem); grid-template-rows: minmax(0,1fr); }
-.hud-switch { display: none; }
-.hud-body > .workspace-view { grid-area: 1/2; }
-.hud-aux { grid-area: 1/3; min-width: 0; overflow: auto; padding: 12px; border-left: 1px solid #414246; background: #18191c; }
-.hud-aux fieldset { min-width: 0; padding: 8px 0; }
-.hud-aux [aria-label='Диагностика жеста'] { margin-top: 10px; border-top: 1px solid #414246; padding-top: 8px; }
-.hud-body h2 { margin: 12px 0; font-size: 15px; font-weight: 700; }
-.density-hud [aria-label='Срез плотности'] { display: block; }
-@media (min-width: 901px) {
-  .density-hud:not([data-panel=diagnostic]) [aria-label='Срез плотности'] { display: block; }
-}
-@media (max-width: 900px) {
-  .hud-body { grid-template-columns: 1fr; grid-template-rows: minmax(0,1fr) auto minmax(0,.75fr); }
-  .hud-body > .workspace-view { grid-area: 1/1; }
-  .hud-switch { display: flex; position: static; grid-area: 2/1; padding: 5px 12px; }
-  .hud-inspector, .hud-aux { grid-area: 3/1; padding: 6px 12px; }
-  .hud-body h2 { display: none; }
-  .density-hud:is([data-panel=brush],[data-panel=pigment],[data-panel=scene]) .hud-aux,
-  .density-hud:is([data-panel=reference],[data-panel=document],[data-panel=diagnostic]) .hud-inspector,
-  .density-hud:not([data-panel=brush]) [data-group=brush],
-  .density-hud:not([data-panel=pigment]) [data-group=pigment],
-  .density-hud:not([data-panel=scene]) [data-group=scene],
-  .density-hud:not([data-panel=reference]) [data-group=reference],
-  .density-hud:not([data-panel=document]) [data-group=document],
-  .density-hud:not([data-panel=diagnostic]) [data-group=diagnostic] { display: none; }
-}
-
-.hud-inspector, .hud-aux { container-type:inline-size; min-inline-size:0; scrollbar-gutter:stable; overflow-wrap:anywhere; }
-.hud-aux label { flex-wrap:wrap; max-inline-size:100%; }
-.hud-aux .raster-tools { inline-size:100%; min-inline-size:0; }
-.hud-aux .raster-params { grid-template-columns:repeat(auto-fit,minmax(min(100%,11rem),1fr)); }
-@container (max-width:20rem) {
-  .workspace-tools label, .hud-panel label { inline-size:100%; justify-content:space-between; }
-  .workspace-tools input:not([type=range]) { flex:1 1 7rem; min-inline-size:0; }
-}
-.density-hud .workspace-view { container:field-pane / size; background:#222124; }
-.density-hud [aria-label='Срез плотности'] { max-block-size:30cqh; }
-.density-hud .hud-status { max-block-size:18dvh; overflow:auto; }
-@media (min-width:590px) and (max-width:900px) and (max-height:650px) {
-  .hud-body { grid-template-columns:minmax(0,1fr) minmax(15rem,34%); grid-template-rows:auto minmax(0,1fr); }
-  .hud-body > .workspace-view { grid-area:1/1/span 2/2; }
-  .hud-switch { grid-area:1/2; flex-wrap:wrap; }
-  .hud-inspector,.hud-aux { grid-area:2/2; }
-}
-@media(max-height:550px) {
-  .hud-head { padding-block:3px; }
-  .density-hud .hud-status { min-height:42px; padding-block:4px; }
-  body:has(.density-hud:not([hidden])) .beta-launch { min-height:32px; bottom:4px; padding:4px 10px; }
-}
+.density-hud:not([hidden]){display:grid;grid-template-rows:auto minmax(0,1fr) auto;height:100dvh;max-width:none;padding:0;overflow:clip;background:#171617;color:#eee7de;font:14px/1.45 var(--font-sans)}
+.density-hud [hidden]{display:none!important}
+.hud-head,.hud-status,.sheet-bar{display:flex;align-items:center;gap:.6rem 1rem;padding:.65rem 1rem;background:#201d1e;border-bottom:1px solid #514146}
+.hud-head>div{min-width:0}.hud-head h1{font-size:clamp(17px,2vw,26px);line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hud-head b{margin-right:auto;white-space:nowrap}.hud-head small,.hud-switch,.work-shelf legend,.sheet-bar b{color:#ff9c99;font:600 11px/1.4 var(--font-mono);letter-spacing:.07em}
+.density-hud :is(button,select,input:not([type=range],[type=checkbox],[type=color])){min-height:36px;max-width:100%;padding:5px 9px;border:1px solid #645256;border-radius:5px;background:#30282a;color:#f6eee7;font:500 13px/1.35 var(--font-sans)}
+.density-hud :is(button,select):not(:disabled):hover{border-color:#ff9c99}.density-hud :focus-visible{outline:2px solid #ffada1;outline-offset:1px}.density-hud :disabled{opacity:.55}.density-hud input{accent-color:#d76064}.hud-head button:last-child{background:#712e37}
+.hud-body{display:grid;grid-template: auto minmax(0,1fr) / clamp(14rem,22vw,19rem) minmax(0,1fr);min-height:0}.hud-switch{grid-area:1/1;padding:1rem;border-bottom:1px solid #4a393c}.hud-switch label,.work-shelf{display:grid;gap:.55rem}.hud-inspector{grid-area:2/1;min-width:0;overflow:auto;scrollbar-gutter:stable;padding:1rem;background:#201d1e;overflow-wrap:anywhere}.hud-inspector fieldset{min-width:0;border:0;padding:.5rem 0}.hud-inspector label{display:flex;align-items:center;flex-wrap:wrap;gap:.4rem}.hud-inspector .transfer-controls,.hud-panel fieldset,.hud-aux section{display:flex;flex-wrap:wrap;gap:.6rem}.hud-aux p,.hud-panel p,.hud-inspector output{max-width:100%}.work-shelf strong{font-size:20px}.work-shelf label{justify-content:space-between}.work-shelf input[type=range]{width:100%}.work-shelf small{color:#d5c3b9}.work-shelf .brush-proof{width:100%;height:auto;border-radius:4px;filter:brightness(1.24) sepia(.16)}
+.density-hud:not([data-panel=shelf]) [data-group=shelf],.density-hud:not([data-panel=brush]) [data-group=brush],.density-hud:not([data-panel=pigment]) [data-group=pigment],.density-hud:not([data-panel=scene]) [data-group=scene],.density-hud:not([data-panel=reference]) [data-group=reference],.density-hud:not([data-panel=document]) [data-group=document],.density-hud:not([data-panel=diagnostic]) :is([data-group=diagnostic],[aria-label='Срез плотности']){display:none}
+.density-hud .workspace-view{grid-area:1/2/span 2;display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:.55rem;min-height:0;min-width:0;padding:.6rem 1rem 1rem;background:linear-gradient(135deg,#343031,#262426 54%,#312b2c)}.sheet-bar{padding:.35rem .5rem;border-radius:5px;background:#201e20;flex-wrap:wrap;gap:.35rem .6rem}.sheet-bar b{margin-right:auto}.sheet-bar label{font-size:12px}.density-hud .section-surface{container-type:size;display:grid;place-items:center;margin:0}.density-hud .hud-sheet,.density-hud .section-overlay{width:min(100cqw,calc(100cqh * var(--doc-ratio)));height:auto;aspect-ratio:var(--doc-ratio);grid-area:1/1}.density-hud .section-overlay{inset:auto}.hud-sheet{overflow:clip;box-shadow:0 3px 18px #0008}.workspace-view[data-paper=warm] .workspace-plane>canvas{filter:brightness(1.28) sepia(.19)}.workspace-view[data-paper=ash] .workspace-plane>canvas{filter:brightness(1.17)}.density-hud [aria-label='Срез плотности']{max-height:28dvh;overflow:auto}.hud-status{min-height:57px;padding-right:180px;border-top:1px solid #493c40}.hud-status p{margin:0}.hud-aux .raster-params{grid-template-columns:repeat(auto-fit,minmax(min(100%,10rem),1fr))}
+@media(max-width:680px) and (min-height:500px){.hud-head{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.25rem;padding:.4rem}.hud-head>div{grid-column:span 2}.hud-head b{font-size:11px}.hud-body{grid-template:minmax(0,1fr) auto minmax(0,.45fr)/minmax(0,1fr)}.density-hud .workspace-view{grid-area:1/1;padding:.4rem}.hud-switch{grid-area:2/1;padding:.25rem .65rem}.hud-switch label{display:flex;align-items:center;justify-content:space-between}.hud-inspector{grid-area:3/1;padding:.4rem .65rem}.work-shelf{grid-template-columns:1fr 1fr}.work-shelf .brush-proof{max-width:140px}.sheet-bar b{display:none}.sheet-bar{gap:.2rem;padding:.25rem}.hud-status{font-size:12px;gap:.3rem;flex-wrap:wrap;padding-left:.5rem;min-height:50px}}
+@media(max-height:499px){.hud-body{grid-template-columns:minmax(11rem,26vw) minmax(0,1fr)}.hud-head,.hud-status,.hud-switch{padding-block:.2rem}.hud-status{min-height:38px}.sheet-bar b{display:none}}
+@media(pointer:coarse){.density-hud :is(button,select,input[type=color]){min-height:44px}}
+@media(max-width:680px) and (min-height:500px){.sheet-bar button{min-width:44px}.sheet-bar button span{display:none}.sheet-bar button::before{content:'↶';font-size:21px}.sheet-bar button:last-child::before{content:'↷'}.hud-body{grid-template-rows:minmax(0,1fr) auto minmax(0,.36fr)}}
+@media(max-height:499px){.density-hud .workspace-view{padding:.2rem .6rem;gap:.15rem}.sheet-bar{padding:0}.hud-switch select{min-width:0;width:100%}.hud-switch label{min-width:0}.hud-head h1{max-width:25vw}}
+/* Explicit expanded inspector: grouped instruments remain reachable together. */
+.density-hud[data-panel=all] .hud-inspector [data-group]:not([data-group=shelf]){display:block;margin-bottom:.75rem}.density-hud[data-panel=all] .hud-inspector fieldset.transfer-controls{display:flex}.density-hud[data-panel=all] .hud-inspector .hud-aux{border-top:1px solid #514146}
+.density-hud[data-panel=all]:has([data-group=diagnostic] input:checked) [aria-label='Срез плотности']{display:block}

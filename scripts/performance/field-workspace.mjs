@@ -10,10 +10,10 @@ try {
   const page=await browser.newPage({viewport:{width:1280,height:1200}}), errors=[]
   page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept())
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/`)
-  const click=name=>page.getByRole('button',{name,exact:true}).click(),canvas=page.getByLabel('Поле плотности',{exact:true}),tool=page.getByLabel('Инструмент'),name=page.getByLabel('Имя документа'),mm=page.getByLabel('Ширина поля, мм'),opacity=page.getByLabel('Непрозрачность')
+  const click=name=>page.getByRole('button',{name,exact:true}).click(),canvas=page.getByLabel('Поле плотности',{exact:true}),tool=page.locator('[data-group="brush"]').getByLabel(/^Инструмент/),name=page.getByLabel('Имя документа'),mm=page.getByLabel('Ширина поля, мм'),opacity=page.getByLabel('Непрозрачность')
   const file=async action=>{const [d]=await Promise.all([page.waitForEvent('download'),click(action)]);return readFile(await d.path())}
   const upload=async (action,filename,buffer,mimeType)=>{const [picker]=await Promise.all([page.waitForEvent('filechooser'),click(action)]);await picker.setFiles({name:filename,buffer,mimeType})}
-  await click('Чистое поле');await canvas.click();const drawn=await file('Экспорт поля')
+  await page.getByLabel('Инспектор').selectOption('all');await click('Чистое поле');await canvas.click();const drawn=await file('Экспорт поля')
   await tool.selectOption('restore');await canvas.click();const fixed=await file('Экспорт поля');assert.notDeepEqual(fixed,drawn)
   await click('Шаг назад');assert.deepEqual(await file('Экспорт поля'),drawn);await click('Шаг вперёд');assert.deepEqual(await file('Экспорт поля'),fixed)
   await tool.selectOption('pan');await click('Увеличить');await canvas.focus();await page.keyboard.press('ArrowLeft');const left=await canvas.evaluate(c=>c.getBoundingClientRect().left)
@@ -27,9 +27,9 @@ try {
   await click('Новый документ');assert.equal(await name.inputValue(),'Без названия');assert.equal(await page.getByAltText('Локальная подложка').count(),0)
   await upload('Открыть документ','эскиз.tfw',doc,'application/octet-stream');await page.getByText('Документ открыт',{exact:true}).waitFor();assert.deepEqual(await file('Сохранить документ'),doc)
   const corrupt=Buffer.from(doc);corrupt[17]^=1;await upload('Открыть документ','bad.tfw',corrupt,'application/octet-stream');await page.getByText('Повреждены метаданные документа').waitFor();assert.deepEqual(await file('Сохранить документ'),doc)
-  await page.reload();await page.getByText('Локальное поле загружено').waitFor();assert.deepEqual(await file('Сохранить документ'),doc);assert.equal(await name.inputValue(),'Эскиз №4');assert.equal(await mm.inputValue(),'87.5');assert.equal(await opacity.inputValue(),'0.27');assert.deepEqual(await file('Экспорт поля'),fixed)
+  await page.reload();await page.getByLabel('Инспектор').selectOption('all');await page.getByText('Локальное поле загружено').waitFor();assert.deepEqual(await file('Сохранить документ'),doc);assert.equal(await name.inputValue(),'Эскиз №4');assert.equal(await mm.inputValue(),'87.5');assert.equal(await opacity.inputValue(),'0.27');assert.deepEqual(await file('Экспорт поля'),fixed)
   // Force an actual IDB write transaction abort: the previous field AND metadata must survive.
   await page.evaluate(()=>{const put=IDBObjectStore.prototype.put;IDBObjectStore.prototype.put=function(...args){const request=put.apply(this,args);this.transaction.abort();return request}})
-  await click('Новый документ');await page.getByText('Не удалось сохранить локально — экспортируйте файл').waitFor();await page.reload();await page.getByText('Локальное поле загружено').waitFor();assert.deepEqual(await file('Сохранить документ'),doc)
+  await click('Новый документ');await page.getByText('Не удалось сохранить локально — экспортируйте файл').waitFor();await page.reload();await page.getByLabel('Инспектор').selectOption('all');await page.getByText('Локальное поле загружено').waitFor();assert.deepEqual(await file('Сохранить документ'),doc)
   assert.deepEqual(errors,[]);console.log(`Workspace PASS; ${browser.version()}; document ${doc.length} B`)
 }finally{try{await browser?.close()}finally{await server.close()}}

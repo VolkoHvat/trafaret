@@ -6,7 +6,7 @@ import { preview } from 'vite'
 const server=await preview({build:{outDir:process.argv[2]??'dist'},preview:{host:'127.0.0.1',port:0,open:false}})
 let browser
 const button=(p,name)=>p.getByRole('button',{name,exact:true}), name=p=>p.getByLabel('Имя документа'), saved=p=>p.getByText('Сохранено локально',{exact:true}).waitFor()
-async function file(p){const [d]=await Promise.all([p.waitForEvent('download'),button(p,'Сохранить документ').click()]);return readFile(await d.path())}
+async function file(p){await p.getByLabel('Инспектор').selectOption('all');const [d]=await Promise.all([p.waitForEvent('download'),button(p,'Сохранить документ').click()]);return readFile(await d.path())}
 async function tap(p,x){const c=p.getByLabel('Поле плотности',{exact:true}), b=await c.boundingBox();await c.click({position:{x:Math.floor(x*b.width),y:Math.floor(.5*b.height)}})}
 const url=`http://127.0.0.1:${server.httpServer.address().port}/`
 try{
@@ -14,7 +14,7 @@ try{
   for(const [label,x] of [['overlap',.26],['disjoint',.75]]){
     const ctx=await browser.newContext({serviceWorkers:'block'}),a=await ctx.newPage(),b=await ctx.newPage(),errors=[]
     for(const p of [a,b])p.on('pageerror',e=>errors.push(String(e)))
-    const response=await a.goto(url);assert.equal(response.status(),200);assert.equal(await response.text(),await readFile(`${process.argv[2]??'dist'}/index.html`,'utf8'));await a.bringToFront();await button(a,'Чистое поле').click();await saved(a)
+    const response=await a.goto(url);await a.getByLabel('Инспектор').selectOption('all');assert.equal(response.status(),200);assert.equal(await response.text(),await readFile(`${process.argv[2]??'dist'}/index.html`,'utf8'));await a.bringToFront();await button(a,'Чистое поле').click();await saved(a)
     // Establish the exact standalone result for B's edit before creating the race.
     await tap(a,x);await saved(a);const expectedLocal=await file(a);await button(a,'Шаг назад').click();await saved(a)
     await b.goto(url);await b.getByText('Локальное поле загружено').waitFor()

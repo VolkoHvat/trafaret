@@ -24,15 +24,26 @@ import DensitySection from './DensitySection'
 import './DensityCanvas.css'
 import './density-hud.css'
 
-type Stroke = { material?:ReturnType<PigmentField['materialStroke']>; gesture?: Gesture; id: number; path: PathInput; before: Patch; queue: Point[]; ended: boolean; frame: number; reduced: boolean }
+type Stroke = { material?:ReturnType<PigmentField['materialStroke']>; core:Set<number>; gesture?: Gesture; id: number; path: PathInput; before: Patch; queue: Point[]; ended: boolean; frame: number; reduced: boolean }
 const CAPACITY = 2048
 function download(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob), a = document.createElement('a')
   a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 import LocalSurface from './LocalSurface'
+import CompositionTool from './CompositionTool'
 import { fineBrush, pigmentSpan } from '../lib/fine-line'
+import { useTattooStyleTool } from './TattooStyleTool'
 export default function DensityCanvas() {
+  const [composition,setComposition]=useState<ImageData|null>(null), compositionButton=useRef<HTMLButtonElement>(null)
+  function reviewComposition(){
+    if(!canvas.current)return
+    const copy=document.createElement('canvas'), scale=Math.min(1,512/WIDTH,512/HEIGHT)
+    copy.width=Math.round(WIDTH*scale);copy.height=Math.round(HEIGHT*scale)
+    const ctx=copy.getContext('2d');if(!ctx)return
+    ctx.imageSmoothingQuality='high';ctx.drawImage(canvas.current,0,0,copy.width,copy.height)
+    setComposition(ctx.getImageData(0,0,copy.width,copy.height))
+  }
   const [sectionImage,setSectionImage]=useState<ImageData|null>(null)
   const size: Size = new URLSearchParams(location.search).get('field') === '2048' ? LARGE : SMALL
   const [surface,setSurface]=useState(()=>new URLSearchParams(location.search).has('surface'))
@@ -45,7 +56,7 @@ export default function DensityCanvas() {
   function setBrush(next:Brush){setTargetMm(null);setManualBrush(next)}
   const pigment=useRef(new PigmentField(WIDTH,HEIGHT)), [lineColor,setLineColor]=useState('#000000'), [fillColor,setFillColor]=useState('#000000'), [mixColor,setMixColor]=useState('#000000'), [mixWeight,setMixWeight]=useState(.35), [inkTool,setInkTool]=useState<'rho'|'line'|'fill'|'mix'|'material'>('rho')
   const [newPaint,setNewPaint]=useState(false)
-  function beginMaterial(){if(mode!=='tone'||inkTool!=='material')return;const c=hexPigment(mixColor);return pigment.current.materialStroke(newPaint?mixingBrush([c.r,c.g,c.b],mixWeight):undefined)}
+  function beginMaterial(){if(bufferMode==='off'||mode!=='tone'||inkTool!=='material')return;const c=hexPigment(mixColor);return pigment.current.materialStroke(newPaint?mixingBrush([c.r,c.g,c.b],mixWeight):undefined)}
   const fillDialog=useRef<HTMLDialogElement>(null), fillCanvas=useRef<HTMLCanvasElement>(null), preview=useRef<ReturnType<PigmentField['previewFill']>|null>(null)
   const [fillInfo,setFillInfo]=useState(''), [mixTool,setMixTool]=useState<'line'|'fill'>('line')
   const stagedMix=useRef<PigmentDelta|null>(null)
@@ -53,7 +64,7 @@ export default function DensityCanvas() {
   const restoreColor=useCallback((m:Workspace)=>{pigment.current=m.pigment?PigmentField.restore(m.pigment):new PigmentField(WIDTH,HEIGHT)},[WIDTH,HEIGHT])
   const [meta,setMeta]=useState(defaults), metaRef=useRef(meta), pendingMeta=useRef<Workspace|null>(null)
   const {mode}=meta, pitch=meta.widthMm/WIDTH
-  const brush=targetMm===null?manualBrush:fineBrush(targetMm,pitch)
+  const bufferMode=meta.bufferMode??'full', brush={...(targetMm===null?manualBrush:fineBrush(targetMm,pitch,bufferMode)),bufferMode}
   const sampleMm=pigmentSpan(brush)*pitch
   const [tool,setTool]=useState<'draw'|'pan'|'restore'>('draw')
   const view=useRef({zoom:1,x:0,y:0}), viewport=useRef<HTMLDivElement>(null)
@@ -185,13 +196,14 @@ export default function DensityCanvas() {
     }}
     ctx.putImageData(img,0,0);stagedMix.current=delta;setFillInfo(info);fillDialog.current!.showModal()
   }
-  function commitStroke(p:Patch,material?:ReturnType<PigmentField['materialStroke']>){
+  function commitStroke(p:Patch,material?:ReturnType<PigmentField['materialStroke']>,core?:Set<number>){
     if(material){const d=material.delta();pigment.current.apply(d,'after');finishOperation(p,d);return}
     if(mode==='tone'&&inkTool==='mix'){
-      const indices=Array.from(depleted(p,field,WIDTH));for(const [id,t] of p)writeTile(field,id,t);repaint(p)
+      const indices=Array.from(bufferMode==='off'&&core?core:depleted(p,field,WIDTH));for(const [id,t] of p)writeTile(field,id,t);repaint(p)
       stageMix(indices,'Цветная линия');return
     }
-    const delta=mode==='tone'&&inkTool==='line'?pigment.current.paint('line',depleted(p,field,WIDTH),hexPigment(lineColor)):undefined;finishOperation(p,delta)
+    const indices=bufferMode==='off'&&inkTool==='line'?(core??new Set<number>()):depleted(p,field,WIDTH)
+    const delta=mode==='tone'&&inkTool==='line'?pigment.current.paint('line',indices,hexPigment(lineColor)):undefined;finishOperation(p,delta)
   }
   function fillAt(i:number, outside?:(i:number)=>boolean){
     if(mode==='stencil'||preview.current)return
@@ -267,10 +279,11 @@ export default function DensityCanvas() {
     const start=map(e.nativeEvent,el.getBoundingClientRect()), gesture=record?new Gesture(field.length,brush,e.pointerType):undefined
     if(gesture){stopReplay();setReport('');setLast(null);gesture.sample(start,e.pressure)}
     const transfer=beginMaterial()
-    const kernel = new Transfer(brush, gesture ? rect=>{capture(before,field,rect);gesture.before(field,rect)} : rect=>capture(before,field,rect))
+    const core=new Set<number>(), kernel = new Transfer(brush, gesture ? rect=>{capture(before,field,rect);gesture.before(field,rect)} : rect=>capture(before,field,rect))
+    kernel.markCore=i=>core.add(i)
     if(transfer)kernel.material=(core,ring)=>transfer.stamp(core,ring)
     const path = new PathInput(field, kernel, start)
-    active.current = { material:transfer, gesture, id: e.pointerId, path, before, queue: [], ended: false, frame: 0, reduced: false }; setBusy(true); paint(path.first)
+    active.current = { core, material:transfer, gesture, id: e.pointerId, path, before, queue: [], ended: false, frame: 0, reduced: false }; setBusy(true); paint(path.first)
   }
   function drain(s: Stroke) {
     if (active.current !== s) return
@@ -287,7 +300,7 @@ export default function DensityCanvas() {
     if (s.queue.length) s.frame = requestAnimationFrame(() => drain(s))
     else if (s.ended) {
       if(s.gesture){s.gesture.finish(field,false);setLast(s.gesture)}
-      commitStroke(s.before,s.material); active.current = null; setBusy(false); setScene(s.reduced ? 'Свой рисунок · ввод прорежен' : 'Свой рисунок')
+      commitStroke(s.before,s.material,s.core); active.current = null; setBusy(false); setScene(s.reduced ? 'Свой рисунок · ввод прорежен' : 'Свой рисунок')
     }
   }
   function advance(e: ReactPointer<HTMLCanvasElement>, ended: boolean) {
@@ -320,18 +333,22 @@ export default function DensityCanvas() {
     pickKind.current=kind;input.accept=kind==='image'?'image/png,image/jpeg':'.tfd,.tfw';input.click()
   }
   const zoomBy=(factor:number)=>navigate(view.current.zoom*factor,view.current.x,view.current.y)
-  const palette=<fieldset disabled={locked||mode==='stencil'}><legend>Пигмент</legend><label>Режим пигмента <select value={inkTool} onChange={e=>setInkTool(e.target.value as typeof inkTool)}><option value="rho">Только плотность</option><option value="line">Цветная линия</option><option value="fill">Заливка</option><option value="mix">Смешение пигментов</option><option value="material">Вещество поля</option></select></label>{inkTool==='material'&&<><label><input type="checkbox" checked={newPaint} onChange={e=>setNewPaint(e.target.checked)}/>Добавлять новый пигмент</label>{newPaint&&<><label>Цвет вещества <input type="color" value={mixColor} onChange={e=>setMixColor(e.target.value)}/></label><label>Подача <input type="range" min="0.05" max="1" step="0.05" value={mixWeight} onChange={e=>setMixWeight(+e.target.value)}/></label></>}<p>Без подачи кисть перемещает только ранее нанесённую смесь; обычные sRGB-слои остаются на месте.</p></>}{inkTool!=='mix'&&inkTool!=='material'&&<><label>Цвет линии <input type="color" value={lineColor} onChange={e=>setLineColor(e.target.value)}/></label><label>Цвет заливки <input type="color" value={fillColor} onChange={e=>setFillColor(e.target.value)}/></label></>}{inkTool==='mix'&&<><label>Цвет пигмента <input type="color" value={mixColor} onChange={e=>setMixColor(e.target.value)}/></label><label>Вес {Math.round(mixWeight*100)}% <input type="range" min="0.05" max="1" step="0.05" value={mixWeight} onChange={e=>setMixWeight(+e.target.value)}/></label><label>Канал <select value={mixTool} onChange={e=>setMixTool(e.target.value as typeof mixTool)}><option value="line">Цветная линия</option><option value="fill">Цветная заливка</option></select></label><p role="note">Внимание: условная симуляция, не прогноз заживления.</p></>}</fieldset>
-  return <><dialog ref={fillDialog} onCancel={()=>finishFill(false)}><p>{stagedMix.current?'Предпросмотр смеси':'Предпросмотр заливки'} · {fillInfo}</p><canvas style={{maxWidth:"min(80vw, 65vh)",height:"auto"}} ref={fillCanvas} width={WIDTH} height={HEIGHT}/><div><button onClick={()=>finishFill(true)}>{stagedMix.current?'Применить смесь':'Применить заливку'}</button><button onClick={()=>finishFill(false)}>{stagedMix.current?'Отменить смесь':'Отменить заливку'}</button></div></dialog>{surface&&ready&&<SurfaceWorkspace beginMaterial={beginMaterial} field={field} commit={commitStroke} projection={mode} pigment={pigment.current} inkRevision={inkRevision} palette={palette} filling={filling&&mode==='tone'} fillAt={fillAt} canUndo={!!history.undoCount} canRedo={!!history.redoCount} travel={travel} body={meta.surfaceBody??bodyDefaults} setBody={surfaceBody=>updateMeta({surfaceBody})} replace={(next,surfaceBody)=>{const patch=replacement(field,next), metadata={...metaRef.current,surfaceBody};delete metadata.pigment;restoreColor(metadata);setHistory(new TileHistory());metaRef.current=metadata;setMeta(metadata);paint();void persist(patch,metadata,undefined,'after',true)}} leave={()=>switchView(false)} locked={locked} status={status}/>}
+  const styleTool=useTattooStyleTool(field,WIDTH,HEIGHT,meta.widthMm,locked||mode==='stencil',[setLineColor,setFillColor,setMixColor])
+  const bufferControl=<label title="Отключает перенос массы для следующих штрихов. Существующее поле и кольца сохраняются."><input type="checkbox" checked={bufferMode==='off'} onChange={e=>updateMeta({bufferMode:e.target.checked?'off':'full'})}/> Без буфера</label>
+  const palette=<fieldset disabled={locked||mode==='stencil'}><legend>Пигмент</legend>{bufferControl}<label>Режим пигмента <select value={inkTool} onChange={e=>setInkTool(e.target.value as typeof inkTool)}><option value="rho">Только плотность</option><option value="line">Цветная линия</option><option value="fill">Заливка</option><option value="mix">Смешение пигментов</option><option value="material">Вещество поля</option></select></label>{inkTool==='material'&&<><label><input type="checkbox" checked={newPaint} onChange={e=>setNewPaint(e.target.checked)}/>Добавлять новый пигмент</label>{newPaint&&<><label>Цвет вещества <input type="color" value={mixColor} onChange={e=>setMixColor(e.target.value)}/></label><label>Подача <input type="range" min="0.05" max="1" step="0.05" value={mixWeight} onChange={e=>setMixWeight(+e.target.value)}/></label></>}<p>Без подачи кисть перемещает только ранее нанесённую смесь; обычные sRGB-слои остаются на месте.</p></>}{inkTool!=='mix'&&inkTool!=='material'&&<><label>Цвет линии <input type="color" value={lineColor} onChange={e=>setLineColor(e.target.value)}/></label><label>Цвет заливки <input type="color" value={fillColor} onChange={e=>setFillColor(e.target.value)}/></label></>}{inkTool==='mix'&&<><label>Цвет пигмента <input type="color" value={mixColor} onChange={e=>setMixColor(e.target.value)}/></label><label>Вес {Math.round(mixWeight*100)}% <input type="range" min="0.05" max="1" step="0.05" value={mixWeight} onChange={e=>setMixWeight(+e.target.value)}/></label><label>Канал <select value={mixTool} onChange={e=>setMixTool(e.target.value as typeof mixTool)}><option value="line">Цветная линия</option><option value="fill">Цветная заливка</option></select></label><p role="note">Внимание: условная симуляция, не прогноз заживления.</p></>}</fieldset>
+  return <><dialog ref={fillDialog} onCancel={()=>finishFill(false)}><p>{stagedMix.current?'Предпросмотр смеси':'Предпросмотр заливки'} · {fillInfo}</p><canvas style={{maxWidth:"min(80vw, 65vh)",height:"auto"}} ref={fillCanvas} width={WIDTH} height={HEIGHT}/><div><button onClick={()=>finishFill(true)}>{stagedMix.current?'Применить смесь':'Применить заливку'}</button><button onClick={()=>finishFill(false)}>{stagedMix.current?'Отменить смесь':'Отменить заливку'}</button></div></dialog>{surface&&ready&&<SurfaceWorkspace bufferMode={bufferMode} beginMaterial={beginMaterial} field={field} commit={commitStroke} projection={mode} pigment={pigment.current} inkRevision={inkRevision} palette={<>{palette}{styleTool}</>} filling={filling&&mode==='tone'} fillAt={fillAt} canUndo={!!history.undoCount} canRedo={!!history.redoCount} travel={travel} body={meta.surfaceBody??bodyDefaults} setBody={surfaceBody=>updateMeta({surfaceBody})} replace={(next,surfaceBody)=>{const patch=replacement(field,next), metadata={...metaRef.current,surfaceBody};delete metadata.pigment;restoreColor(metadata);setHistory(new TileHistory());metaRef.current=metadata;setMeta(metadata);paint();void persist(patch,metadata,undefined,'after',true)}} leave={()=>switchView(false)} locked={locked} status={status}/>}
+    {composition&&<CompositionTool image={composition} neutral={project(1,mode)} widthMm={meta.widthMm} leave={()=>{setComposition(null);requestAnimationFrame(()=>compositionButton.current?.focus())}}/>}
     {sectionImage&&<LocalSurface image={sectionImage} widthMm={meta.widthMm} neutral={project(1,mode)} leave={()=>setSectionImage(null)}/>}
-    <main hidden={!!sectionImage||surface&&ready} className="transfer-page density-hud" style={{'--doc-ratio':WIDTH/HEIGHT} as CSSProperties} data-panel={panel}>
+    <main hidden={!!composition||!!sectionImage||surface&&ready} className="transfer-page density-hud" style={{'--doc-ratio':WIDTH/HEIGHT} as CSSProperties} data-panel={panel}>
     <header className="hud-head"><div><small>TRAFARET / BETA</small><h1>Перенос плотности</h1></div><b>Документ {WIDTH}×{HEIGHT}</b>
+    <button ref={compositionButton} disabled={locked} onClick={reviewComposition}>Композиция</button>
     {size===LARGE&&<button disabled={locked} onClick={()=>{const pixels=canvas.current?.getContext('2d')?.getImageData(0,0,WIDTH,HEIGHT);if(pixels)setSectionImage(pixels)}}>Участок тела</button>}
     <button disabled={locked} onClick={()=>switchView(true)}>3D-поверхность</button>
     <button disabled={locked || !durable} onClick={()=>{ location.search = size === SMALL ? '?field=2048' : '' }}>{size === SMALL ? 'Основная студия · открыть 2048×2048' : 'Открыть 384×240'}</button></header>
     <section className="hud-body" aria-label="Опыт с пересечением">
     <label className="hud-switch">Инспектор <select value={panel} onChange={e=>setPanel(e.target.value)}><option value="brush">Кисть и проекция</option><option value="pigment">Цвет линии и заливки</option><option value="scene">Сцена и история</option><option value="reference">Изображение → линворк</option><option value="document">Документ и печать</option><option value="diagnostic">Жест и срез плотности</option></select></label>
     <aside className="hud-inspector"><h2>Инструменты</h2>
-    <div className="hud-panel" data-group="pigment">{palette}</div>
+    <div className="hud-panel" data-group="pigment">{palette}{styleTool}</div>
     <fieldset disabled={locked} className="transfer-controls" data-group="scene"><button onClick={() => replace(size === SMALL ? demo.ab : demoOrder(DEFAULT,size,false), 'A → B')}>A → B</button><button onClick={() => replace(size === SMALL ? demo.ba : demoOrder(DEFAULT,size,true), 'B → A')}>B → A</button><button onClick={() => replace(freshField(size), 'Чистое поле')}>Чистое поле</button><button disabled={!history.undoCount} onClick={() => travel(false)}>Шаг назад</button><button disabled={!history.redoCount} onClick={() => travel(true)}>Шаг вперёд</button></fieldset>
     <fieldset disabled={locked} className="transfer-controls" data-group="brush"><label>Инструмент <select value={tool} onChange={e=>setTool(e.target.value as typeof tool)}><option value="draw">Рисовать</option><option value="restore">Восстановить к ρ=1</option><option value="pan">Панорама</option></select></label>
       <button onClick={()=>zoomBy(.5)} disabled={displayZoom<=1}>Уменьшить</button><output>{displayZoom*100}%</output><button onClick={()=>zoomBy(2)} disabled={displayZoom>=8}>Увеличить</button><button onClick={resetView}>Вписать</button>
@@ -340,7 +357,7 @@ export default function DensityCanvas() {
     {tool==='pan'&&<p data-group="brush">Увеличьте поле и перетащите его или используйте стрелки, когда поле в фокусе.</p>}
 
     <p data-group="scene">Контроль 384×240 (r 8 / буфер 6): Σ|Δρ| = {demo.difference.toFixed(2)} · {demo.pixels} разных тональных пикселей.</p>
-    <fieldset disabled={locked} className="transfer-controls" data-group="brush"><label>Fine-line · цель <select value={targetMm??''} onChange={e=>e.target.value?setTargetMm(+e.target.value):setBrush(brush)}><option value="">Вручную</option>{[.1,.15,.25,.35,.5,1].map(n=><option key={n} value={n}>{n} мм</option>)}</select></label><output data-fine-line>Поперечник окраски пробы: {sampleMm.toFixed(3)} мм ({pigmentSpan(brush)} px). Лист {meta.widthMm} мм; шаг {pitch.toFixed(4)} мм/px. Горизонтальная линия на чистом поле, без буфера плотности. {targetMm!==null&&targetMm<pitch?'Цель тоньше пикселя; точная ширина недоступна.':''}</output><label>Кисть <select value={brush.shape ?? 'round'} onChange={e => setBrush({ ...brush, shape: e.target.value as Brush['shape'] })}><option value="round">Круглая</option><option value="nib">Перо 45°</option><option value="refill">Обратное заполнение</option></select></label>{(['radius', 'buffer'] as const).map(key => <label key={key}>{key === 'radius' ? 'Радиус' : 'Буфер'} · {brush[key]} <input type="range" min={key==='radius'?1:2} max={key === 'radius' ? 14 : 16} value={brush[key]} onChange={e => setBrush({ ...brush, [key]: Number(e.target.value) })}/></label>)}<label>Проекция <select value={mode} onChange={e => updateMeta({mode:e.target.value as Mode})}><option value="tone">Тональная</option><option value="stencil">Трафарет</option></select></label></fieldset>
+    <fieldset disabled={locked} className="transfer-controls" data-group="brush"><label>Fine-line · цель <select value={targetMm??''} onChange={e=>e.target.value?setTargetMm(+e.target.value):setBrush(brush)}><option value="">Вручную</option>{[.1,.15,.25,.35,.5,1].map(n=><option key={n} value={n}>{n} мм</option>)}</select></label><output data-fine-line>Поперечник окраски пробы: {sampleMm.toFixed(3)} мм ({pigmentSpan(brush)} px). Лист {meta.widthMm} мм; шаг {pitch.toFixed(4)} мм/px. Горизонтальная линия на чистом поле, без буфера плотности. {targetMm!==null&&targetMm<pitch?'Цель тоньше пикселя; точная ширина недоступна.':''}</output><label>Кисть <select value={brush.shape ?? 'round'} onChange={e => setBrush({ ...brush, shape: e.target.value as Brush['shape'] })}><option value="round">Круглая</option><option value="nib">Перо 45°</option><option value="refill">Обратное заполнение</option></select></label>{(['radius', 'buffer'] as const).map(key => <label key={key}>{key === 'radius' ? 'Радиус' : 'Буфер'} · {brush[key]} <input type="range" min={key==='radius'?1:2} max={key === 'radius' ? 14 : 16} value={brush[key]} onChange={e => setBrush({ ...brush, [key]: Number(e.target.value) })}/></label>)}<label title="Без буфера не создаёт кольцо и не изменяет ρ; в stencil линия не появляется. Пигментная линия записывается отдельно."><input type="checkbox" checked={bufferMode==='off'} onChange={e=>{const next=e.target.checked?'off':'full';updateMeta({bufferMode:next})}}/> Без буфера</label><label>Проекция <select value={mode} onChange={e => updateMeta({mode:e.target.value as Mode})}><option value="tone">Тональная</option><option value="stencil">Трафарет</option></select></label></fieldset>
     <p data-group="scene">Касание — один импульс. Esc отменяет ввод. История: {history.undoCount} назад / {history.redoCount} вперёд.</p>
     {problem&&<section aria-label="Восстановление документа"><p>Автосохранение остановлено. Чтобы оставить обе версии, сначала нажмите «Сохранить документ»: вы скачаете .tfw этой вкладки. Открытие актуальной версии заменит её только здесь.</p>
       <button disabled={busy} onClick={()=>void openLatest()}>Открыть актуальную версию</button>

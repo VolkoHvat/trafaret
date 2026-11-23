@@ -1,4 +1,4 @@
-import { freshField, WIDTH, Transfer, type Point } from './density-transfer'
+import { freshField, WIDTH, Transfer, type Point, type BufferMode } from './density-transfer'
 import { capture, type Patch } from './field-tiles'
 import { chart, type Part } from './surface-model'
 import type { Size } from './field-size'
@@ -64,14 +64,17 @@ export class SurfaceBrush extends Transfer {
   private readonly predicate?: (x:number, y:number)=>boolean
   private before?: Patch
   private readonly atlas: Size
-  constructor(radius:number, part:Part, settings:Settings, predicate?: (x:number, y:number)=>boolean, before?:Patch, atlas: Size = atlasSize) {
-    super({radius,buffer:3})
+  private readonly noBuffer: boolean
+  constructor(radius:number, part:Part, settings:Settings, predicate?: (x:number, y:number)=>boolean, before?:Patch, atlas: Size = atlasSize, bufferMode:BufferMode='full') {
+    super({radius,buffer:3,bufferMode})
     this.before = before
+    this.noBuffer = bufferMode === 'off'
     this.predicate = predicate
     this.reach = radius + 3
     this.atlas = { ...atlas }
     this.bounds = texelBounds(chart(part, settings, atlas))
     // Probe only the brush stencil, not the user's atlas.
+    if (this.noBuffer) {this.reach = radius;return}
     const kernel = freshField(), center=this.reach
     super.stamp(kernel,{x:center,y:center})
     for(let y=-center;y<=center;y++) for(let x=-center;x<=center;x++) {
@@ -83,9 +86,11 @@ export class SurfaceBrush extends Transfer {
     const {width,height}=this.atlas
     if(field.length!==width*height) throw new RangeError('surface atlas size')
     const x=Math.round(p.x),y=Math.round(p.y), b=this.bounds,e=this.reach
-    if(this.before)capture(this.before,field,{left:Math.max(x-e,b.left),right:Math.min(x+e,b.right),top:Math.max(y-e,b.top),bottom:Math.min(y+e,b.bottom)})
-    if(!this.predicate&&x-e>=b.left&&x+e<=b.right&&y-e>=b.top&&y+e<=b.bottom)return super.stamp(field,p)
+    const rect={left:Math.max(x-e,b.left),right:Math.min(x+e,b.right),top:Math.max(y-e,b.top),bottom:Math.min(y+e,b.bottom)}
     const inside=(dx:number,dy:number)=>x+dx>=b.left&&x+dx<=b.right&&y+dy>=b.top&&y+dy<=b.bottom&&(!this.predicate||this.predicate(x+dx,y+dy))
+    if(this.noBuffer){this.pigmentCore(width,x,y,inside);return rect}
+    if(this.before)capture(this.before,field,rect)
+    if(!this.predicate&&x-e>=b.left&&x+e<=b.right&&y-e>=b.top&&y+e<=b.bottom)return super.stamp(field,p)
     let mass=0,sum=0
     for(const [dx,dy,w] of this.ringWeights)if(inside(dx,dy))sum+=w
     if(sum>0){

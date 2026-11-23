@@ -4,7 +4,7 @@ import { presets, defaults as legacyBody, type Preset } from '../lib/surface-bod
 import { front, parts, names, measurementsDefs, texelBounds, scene, sceneBuffers, chart, flatHit, connected, surfacePitch, type Camera, type Part, type Settings, type Hit } from '../lib/surface-model'
 import type { SharedField } from '../lib/shared-field'
 import { writeTile, type Patch } from '../lib/field-tiles'
-import { PathInput, project } from '../lib/density-transfer'
+import { PathInput, project, type BufferMode } from '../lib/density-transfer'
 import { encodeField } from '../lib/field-document'
 import { decodeSurfaceProject, encodeSurfaceProject, maxProjectBytes, SurfaceBrush, validMeasurement } from '../lib/customer-surface-profile'
 import { SurfaceZone } from '../lib/surface-zone'
@@ -21,12 +21,12 @@ type Mode = 'draw'|'zone'|'orbit'|'pan'
 const tools: Record<Mode,string> = {draw:'Кисть',zone:'Зона',pan:'Панорама',orbit:'Орбита'}
 const views = {model:'3D фигура',atlas:'2D развёртка',both:'Рядом'} as const
 const flatFit = {x:0,y:0,zoom:1}
-type Session = {material?:Material;id:number;target:HTMLElement;model:boolean;mode:Mode;x:number;y:number;before:Patch|null;zoneBefore:SurfaceZone|null;last:Hit|null;path:PathInput|null;changed:boolean}
+type Session = {core:Set<number>;material?:Material;id:number;target:HTMLElement;model:boolean;mode:Mode;x:number;y:number;before:Patch|null;zoneBefore:SurfaceZone|null;last:Hit|null;path:PathInput|null;changed:boolean}
 function drafts(settings:Settings){return Object.fromEntries(measurementsDefs.map(({key})=>[key,String(settings[key])])) as Record<keyof Settings,string>}
 function download(bytes:ArrayBuffer,name:string){const url=URL.createObjectURL(new Blob([bytes],{type:'application/octet-stream'}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 type Material=ReturnType<PigmentField['materialStroke']>
-type Props = Omit<SharedField,'commit'> & {beginMaterial():Material|undefined;commit(before:Patch,material?:Material):void; projection:"tone"|"stencil";pigment:PigmentField;inkRevision:number;palette:ReactNode;filling:boolean;fillAt(i:number,outside?:(j:number)=>boolean):void; body: Settings; setBody(body:Settings):void; replace(field:Float64Array,body:Settings):void; leave():void; locked:boolean; status:string }
-export default function SurfaceWorkspace({beginMaterial,projection,pigment,inkRevision,palette,filling,fillAt,field,commit,travel,canUndo,canRedo,body,setBody,replace,leave,locked,status}:Props){
+type Props = Omit<SharedField,'commit'> & {beginMaterial():Material|undefined;commit(before:Patch,material?:Material,core?:Set<number>):void; bufferMode:BufferMode; projection:"tone"|"stencil";pigment:PigmentField;inkRevision:number;palette:ReactNode;filling:boolean;fillAt(i:number,outside?:(j:number)=>boolean):void; body: Settings; setBody(body:Settings):void; replace(field:Float64Array,body:Settings):void; leave():void; locked:boolean; status:string }
+export default function SurfaceWorkspace({beginMaterial,bufferMode,projection,pigment,inkRevision,palette,filling,fillAt,field,commit,travel,canUndo,canRedo,body,setBody,replace,leave,locked,status}:Props){
  const atlasSize=sizeOf(field.length),{width:WIDTH,height:HEIGHT}=atlasSize
  const view=useRef<HTMLCanvasElement>(null), flat=useRef<HTMLCanvasElement>(null), stage=useRef<HTMLDivElement>(null)
  const [geometry,setGeometry]=useState<'body'|'schematic'>('body')
@@ -63,7 +63,7 @@ export default function SurfaceWorkspace({beginMaterial,projection,pigment,inkRe
   }
   view.current!.getContext('2d')!.putImageData(img,0,0)
  },[frame,body,camera,geometry,atlas,revision,zone,projection,pigment,inkRevision,atlasSize,WIDTH])
- const finish=useCallback((cancel:boolean)=>{const s=gesture.current;if(!s)return;gesture.current=null;if(s.before){if(cancel){for(const [id,tile] of s.before)writeTile(field,id,tile)}else commit(s.before,s.material);refresh(v=>v+1)}if(cancel&&s.zoneBefore)setZone(s.zoneBefore);if(s.target.hasPointerCapture(s.id))s.target.releasePointerCapture(s.id);setBusy(false)},[field,commit])
+ const finish=useCallback((cancel:boolean)=>{const s=gesture.current;if(!s)return;gesture.current=null;if(s.before){if(cancel){for(const [id,tile] of s.before)writeTile(field,id,tile)}else commit(s.before,s.material,s.core);refresh(v=>v+1)}if(cancel&&s.zoneBefore)setZone(s.zoneBefore);if(s.target.hasPointerCapture(s.id))s.target.releasePointerCapture(s.id);setBusy(false)},[field,commit])
  useEffect(()=>{const key=(e:KeyboardEvent)=>{if(e.key==='Escape')finish(true)},blur=()=>finish(true);window.addEventListener('keydown',key);window.addEventListener('blur',blur);return()=>{window.removeEventListener('keydown',key);window.removeEventListener('blur',blur)}},[finish])
  function trace(s:Session,x:number,y:number){
   const canvas=(s.model?view:flat).current!,rect=canvas.getBoundingClientRect(),clip=s.target.getBoundingClientRect()
@@ -74,7 +74,7 @@ export default function SurfaceWorkspace({beginMaterial,projection,pigment,inkRe
    if(!hit){s.last=null;s.path=null;continue}
    if(s.mode==='zone'){zone.dab(hit,zoneRadius,body);continue}
    if(!zone.contains(hit.x,hit.y)){s.last=null;s.path=null;continue}
-   if(!connected(s.last,hit)||!s.path){const metric=fineMm===null?null:surfacePitch(hit,body,atlasSize,geometry),pitch=metric?Math.max(metric.u,metric.v):0,r=fineMm!==null&&pitch>0?fineBrush(fineMm,pitch).radius:radius;const kernel=new SurfaceBrush(r,hit.part,body,zone.active?zone.contains:undefined,s.before??undefined,atlasSize);kernel.material=s.material?.stamp;s.path=new PathInput(field,kernel,hit);if(fineMm!==null)setNotice(pitch?`Шаг по большей оси: ${pitch.toFixed(3)} мм/текс.; проба ≈ ${(pigmentSpan({radius:r,buffer:3})*pitch).toFixed(3)} мм. Поддержка: r ${r} + буфер 3 текс.`:'Локальный масштаб недоступен; используется ручной радиус.')}
+   if(!connected(s.last,hit)||!s.path){const metric=fineMm===null?null:surfacePitch(hit,body,atlasSize,geometry),pitch=metric?Math.max(metric.u,metric.v):0,r=fineMm!==null&&pitch>0?fineBrush(fineMm,pitch).radius:radius;const kernel=new SurfaceBrush(r,hit.part,body,zone.active?zone.contains:undefined,s.before??undefined,atlasSize,bufferMode);kernel.markCore=i=>s.core.add(i);kernel.material=s.material?.stamp;s.path=new PathInput(field,kernel,hit);if(fineMm!==null)setNotice(pitch?`Шаг по большей оси: ${pitch.toFixed(3)} мм/текс.; проба ≈ ${(pigmentSpan({radius:r,buffer:3})*pitch).toFixed(3)} мм. Поддержка: r ${r} + буфер 3 текс.`:'Локальный масштаб недоступен; используется ручной радиус.')}
    else s.path.move(hit)
    s.last=hit;s.changed=true
   }
@@ -84,7 +84,7 @@ export default function SurfaceWorkspace({beginMaterial,projection,pigment,inkRe
   const model=e.currentTarget===stage.current
   if(locked||pending.current||gesture.current||e.button!==0||!e.isPrimary||mode==='orbit'&&!model||invalid&&mode==='draw')return
   if(filling&&mode==='draw'){const rect=(model?view:flat).current!.getBoundingClientRect(),u=(e.clientX-rect.left)/rect.width,v=(e.clientY-rect.top)/rect.height,hit=model?projected.current!.hit(u*size.w,v*size.h):flatHit(u*WIDTH,v*HEIGHT,body,atlasSize);if(hit){const c=texelBounds(chart(hit.part,body,atlasSize));fillAt(Math.round(hit.y)*WIDTH+Math.round(hit.x),i=>{const x=i%WIDTH,y=Math.floor(i/WIDTH);return x<c.left||x>c.right||y<c.top||y>c.bottom||!zone.contains(x,y)})}return}
-  e.preventDefault();const s:Session={material:mode==='draw'?beginMaterial():undefined,id:e.pointerId,target:e.currentTarget,model,mode,before:mode==='draw'?new Map():null,zoneBefore:mode==='zone'?zone.clone():null,x:e.clientX,y:e.clientY,last:null,path:null,changed:false}
+  e.preventDefault();const s:Session={core:new Set(),material:mode==='draw'?beginMaterial():undefined,id:e.pointerId,target:e.currentTarget,model,mode,before:mode==='draw'?new Map():null,zoneBefore:mode==='zone'?zone.clone():null,x:e.clientX,y:e.clientY,last:null,path:null,changed:false}
   gesture.current=s;s.target.setPointerCapture(s.id);setBusy(true);if(mode==='draw'||mode==='zone')trace(s,s.x,s.y)
  }
  function move(e:Pointer<HTMLDivElement>){

@@ -6,6 +6,13 @@ const kernel = new Transfer(DEFAULT)
 const p = { x: 80, y: 80 }
 const idx = (x: number, y: number) => y * WIDTH + x
 const mass = (f: Float64Array) => f.reduce((a, b) => a + b, 0)
+describe('buffer off', () => {
+  it('does not mutate rho or create a ring, while full mode does', () => {
+    const off = freshField(), before = off.slice(), core = new Set<number>(), brush = new Transfer({ ...DEFAULT, bufferMode: 'off' }); brush.markCore = i => core.add(i); new PathInput(off, brush, p).move({x:100,y:80});
+    expect(off).toEqual(before); expect(core.size).toBeGreaterThan(0)
+    const full = freshField(); new PathInput(full, new Transfer(DEFAULT), p).move({x:100,y:80}); expect(full).not.toEqual(before)
+  })
+})
 describe('fixed energy density', () => {
   it('conserves actual removed mass at the edge and never fills an empty core from nowhere', () => {
     const f = freshField(), total = mass(f)

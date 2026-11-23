@@ -2,7 +2,8 @@ import { SMALL, sizeOf } from './field-size'
 import type { Size } from './field-size'
 export const WIDTH = SMALL.width, HEIGHT = SMALL.height, STEP = 3
 export const DEFAULT = { radius: 8, buffer: 6 }
-export type Brush = typeof DEFAULT & { shape?: 'round' | 'nib' | 'refill' }
+export type BufferMode = 'full' | 'off'
+export type Brush = typeof DEFAULT & { bufferMode?: BufferMode; shape?: 'round' | 'nib' | 'refill' }
 export type Point = { x: number; y: number; time?: number }
 export type Rect = { left: number; top: number; right: number; bottom: number }
 export type Mode = 'tone' | 'stencil'
@@ -23,23 +24,30 @@ export class Transfer {
   private extent: number
   readonly spacing: number
   readonly refill: boolean
+  readonly bufferMode: BufferMode
+  markCore?: (index:number)=>void
   private capture?: (rect: Rect) => void
   material?: (core:[number,number][], ring:[number,number][])=>void
-  constructor({ radius, buffer, shape = 'round' }: Brush, capture?: (rect: Rect) => void) {
+  constructor({ radius, buffer, bufferMode = 'full', shape = 'round' }: Brush, capture?: (rect: Rect) => void) {
+    if (!['full','off'].includes(bufferMode)) throw new RangeError('buffer mode')
+    this.bufferMode = bufferMode
     this.capture = capture
     if (![radius, buffer].every(Number.isInteger) || radius < 1 || radius > 14 || buffer < 2 || buffer > 16
       || !['round', 'nib', 'refill'].includes(shape)) throw new RangeError('brush')
     this.spacing = radius === 1 ? 1 : STEP
-    this.refill = shape === 'refill'
+    this.refill = bufferMode === 'full' && shape === 'refill'
     this.extent = radius + buffer
     for (let dy = -this.extent; dy <= this.extent; dy++) for (let dx = -this.extent; dx <= this.extent; dx++) {
       const r = shape === 'nib' ? Math.hypot((dx + dy) * Math.SQRT1_2, (dy - dx) * Math.SQRT2) : Math.hypot(dx, dy)
       if (r < radius) this.core.push([dx, dy, -Math.expm1(-0.8 * (1 - (r / radius) ** 2))])
-      else if (r > radius && r < this.extent) {
+      else if (bufferMode === 'full' && r > radius && r < this.extent) {
         const u = (r - radius) / buffer
         this.ring.push([dx, dy, 4 * u * (1 - u)])
       }
     }
+  }
+  protected pigmentCore(width:number,x:number,y:number,inside:(dx:number,dy:number)=>boolean) {
+    if(this.markCore)for(const [dx,dy] of this.core)if(inside(dx,dy))this.markCore((y+dy)*width+x+dx)
   }
   recover(field: Float64Array, p: Point, dt: number) {
     const { width: WIDTH, height: HEIGHT } = sizeOf(field.length)
@@ -59,6 +67,10 @@ export class Transfer {
     const x = Math.round(p.x), y = Math.round(p.y)
     const inside = (dx: number, dy: number) => x + dx >= 0 && x + dx < WIDTH && y + dy >= 0 && y + dy < HEIGHT
     const rect = { left: Math.max(0, x - this.extent), right: Math.min(WIDTH - 1, x + this.extent), top: Math.max(0, y - this.extent), bottom: Math.min(HEIGHT - 1, y + this.extent) }
+    if (this.bufferMode === 'off') {
+      this.pigmentCore(WIDTH,x,y,inside)
+      return rect
+    }
     this.capture?.(rect)
     let sum = 0, mass = 0
     for (const [dx, dy, w] of this.ring) if (inside(dx, dy)) sum += w

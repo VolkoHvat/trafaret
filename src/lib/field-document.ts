@@ -43,3 +43,4 @@ export function decodeField(buffer: ArrayBuffer) {
   if (Math.abs(sum - CELLS) > 1e-5) throw new Error('Нарушен баланс поля')
   return field
 }
+

@@ -9,7 +9,7 @@ import type { Settings } from './surface-model'
 
 import { PigmentField, type PigmentSnapshot } from './pigment'
 
-export type Workspace = { pigment?: PigmentSnapshot; surfaceBody?: Settings; name: string; widthMm: number; mode: Mode; opacity: number; reference: string | null; bodyPlacement?: BodyPlacement; report?: Record<string, unknown> }
+export type Workspace = { bufferMode?: 'full'|'off'; pigment?: PigmentSnapshot; surfaceBody?: Settings; name: string; widthMm: number; mode: Mode; opacity: number; reference: string | null; bodyPlacement?: BodyPlacement; report?: Record<string, unknown> }
 export const defaults = ():Workspace => ({name:'Без названия', widthMm:100, mode:'tone', opacity:0.4, reference:null})
 const magic = 'TFWORK01'
 export const imageLimit = 6*1024*1024, metadataLimit = 8*1024*1024+4096
@@ -44,6 +44,8 @@ export function workspace(value:unknown,cells?:number):Workspace {
   if (!value || typeof value!=='object') throw Error('Нет метаданных документа')
   const {name,widthMm,mode,opacity,reference,bodyPlacement,report,pigment}=value as Workspace
   if(typeof name!=='string' || name.length>100 || !Number.isFinite(widthMm) || widthMm<=0 || widthMm>2000 || !['stencil','tone'].includes(mode) || !Number.isFinite(opacity) || opacity<0 || opacity>1 || (reference!==null && typeof reference!=='string')) throw Error('Недопустимые метаданные документа')
+  const {bufferMode}=value as Workspace
+  if(bufferMode!==undefined&&bufferMode!=='full'&&bufferMode!=='off')throw Error('Недопустимый режим буфера')
   if(reference!==null) validateReference(reference)
   if(pigment!==undefined){const size=sizeOf(cells??pigment.width*pigment.height);if(pigment.width!==size.width||pigment.height!==size.height)throw Error('Размер цветного атласа');PigmentField.restore(pigment)}
   if(bodyPlacement!==undefined) parseBodyPlacement(bodyPlacement)
@@ -51,7 +53,7 @@ export function workspace(value:unknown,cells?:number):Workspace {
     if(!report || typeof report!=='object' || Array.isArray(report)) throw Error('Недопустимый отчёт документа')
     const bytes=new TextEncoder().encode(JSON.stringify(report)); if(bytes.byteLength>4096) throw Error('Отчёт документа слишком велик')
   }
-  return {name,widthMm,mode,opacity,reference, ...('surfaceBody' in value ? {surfaceBody:measurements(value.surfaceBody)} : {}), ...(pigment===undefined?{}:{pigment}), ...(bodyPlacement===undefined ? {} : {bodyPlacement:parseBodyPlacement(bodyPlacement)}), ...(report===undefined ? {} : {report})}
+  return {name,widthMm,mode,opacity,reference,...(bufferMode===undefined?{}:{bufferMode}), ...('surfaceBody' in value ? {surfaceBody:measurements(value.surfaceBody)} : {}), ...(pigment===undefined?{}:{pigment}), ...(bodyPlacement===undefined ? {} : {bodyPlacement:parseBodyPlacement(bodyPlacement)}), ...(report===undefined ? {} : {report})}
 }
 function hash(bytes:Uint8Array){let h=2166136261;for(const b of bytes)h=Math.imul(h^b,16777619);return h>>>0}
 export function pack(field:Float64Array, meta:Workspace){

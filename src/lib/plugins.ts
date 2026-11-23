@@ -59,7 +59,7 @@ function operation(value: unknown): PluginOperation {
   if (operation.type === 'add-path') {
     operation.points = points(operation.points)
     operation.closed = operation.closed === true
-    operation.color = /^#[0-9a-f]{6}$/i.test(String(operation.color)) ? String(operation.color) : '#171914'
+    operation.color = /^#[0-9a-f]{6}$/i.test(String(operation.color)) ? String(operation.color) : '#e8e0d8'
   }
   return operation
 }

@@ -23,6 +23,28 @@ describe('StrokeSession', () => {
     expect(session.pointSets()[0]).toEqual([[10, 20, 0.2], [11, 21, 0.4]])
   })
 
+  it('updates cached symmetry sets incrementally without changing their shape', () => {
+    const session = makeSession({ symmetry: 'radial', radialCount: 4 })
+    const initial = session.pointSets()
+
+    expect(session.addPoint([11, 21, 0.3])).toBe(true)
+    expect(session.pointSets()).toBe(initial)
+    expect(session.pointSets().map(set => set.length)).toEqual([2, 2, 2, 2])
+    expect(session.lastPointSets().map(set => set.length)).toEqual([2, 2, 2, 2])
+    expect(session.pointSets()[1][1][2]).toBe(0.3)
+  })
+
+  it('does not mutate cached points for a rejected sample', () => {
+    const session = makeSession({ symmetry: 'vertical' })
+    const initial = session.pointSets()
+    const initialPoint = initial[0][0]
+
+    expect(session.addPoint([10.1, 20.1, 0.9])).toBe(false)
+    expect(session.pointSets()).toBe(initial)
+    expect(session.pointSets()[0][0]).toBe(initialPoint)
+  })
+
+
   it('replaces the endpoint for line and shape previews', () => {
     for (const options of [{ line: true }, { line: false, shape: 'arc' as const }]) {
       const session = makeSession(options)
@@ -47,17 +69,17 @@ describe('StrokeSession', () => {
     expect(sets.every(set => set[0][2] === 0.6)).toBe(true)
   })
 
-  it('adds a short predicted point only to preview sets', () => {
+  it('keeps the hot preview on actual points and exposes prediction separately', () => {
     const session = makeSession()
     session.addPoint([20, 20, 0.4])
 
-    expect(session.previewPointSets()[0]).toEqual([[10, 20, 0.2], [20, 20, 0.4], [35, 20, 0.4]])
-    expect(session.pointSets()[0]).toEqual([[10, 20, 0.2], [20, 20, 0.4]])
+    expect(session.previewPointSets()[0]).toEqual([[10, 20, 0.2], [20, 20, 0.4]])
+    expect(session.predictionPointSets()[0]).toEqual([[10, 20, 0.2], [20, 20, 0.4], [35, 20, 0.4]])
+    expect(session.pointSets()[0]).toEqual(session.previewPointSets()[0])
 
     const longSegment = makeSession()
     longSegment.addPoint([50, 20, 0.6])
-    expect(longSegment.previewPointSets()[0].at(-1)).toEqual([82, 20, 0.6])
-    expect(longSegment.pointSets()[0].at(-1)).toEqual([50, 20, 0.6])
+    expect(longSegment.predictionPointSets()[0].at(-1)).toEqual([82, 20, 0.6])
   })
 
   it('does not predict line or shape endpoints', () => {
@@ -66,6 +88,18 @@ describe('StrokeSession', () => {
       session.addPoint([30, 40, 0.5])
       expect(session.previewPointSets()).toEqual(session.pointSets())
     }
+  })
+
+  it('extends measured bounds across batches but drops a replaced line endpoint', () => {
+    const free = makeSession({ symmetry: 'vertical' })
+    free.rasterRect()
+    free.addPoint([20, 80, 0.3])
+    expect(free.rasterRect()).toEqual({ x: 0, y: 0, width: 100, height: 100 })
+    const line = makeSession({ line: true })
+    line.addPoint([90, 90, 0.4])
+    line.rasterRect()
+    line.addPoint([20, 20, 0.4])
+    expect(line.rasterRect()).toEqual({ x: 0, y: 0, width: 52, height: 52 })
   })
 
   it('computes a padded raster rect clamped to the document', () => {

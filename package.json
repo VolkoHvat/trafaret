@@ -1,7 +1,7 @@
 {
   "name": "trafaret",
   "private": true,
-  "version": "1.3.0",
+  "version": "2.0.0-beta.4",
   "type": "module",
   "main": "desktop/dist/main.js",
   "scripts": {
@@ -9,6 +9,11 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test": "vitest run",
+    "probe:void": "node --experimental-strip-types scripts/void-probe.mjs",
+    "probe:artwork": "node --experimental-strip-types scripts/artwork-export.mjs",
+    "bench:fill": "vitest run --config vitest.fill-benchmark.config.ts --mode fill-performance",
+    "bench:void": "node --experimental-strip-types --expose-gc scripts/void-benchmark.mjs",
+    "audit:void-sandbox": "node scripts/void-sandbox-regression.mjs",
     "audit:runtime": "node scripts/runtime-audit.mjs",
     "audit:electron": "node scripts/electron-audit.mjs",
     "audit:production": "node scripts/production-regression.mjs",
@@ -17,7 +22,8 @@
     "desktop:build": "esbuild desktop/src/main.ts --bundle --platform=node --format=esm --external:electron --outfile=desktop/dist/main.js && esbuild desktop/src/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=desktop/dist/preload.cjs",
     "desktop:typecheck": "tsc -p desktop/tsconfig.json",
     "desktop:start": "npm run build && npm run desktop:build && electron .",
-    "desktop:dist": "npm run build && npm run desktop:build && electron-builder --win nsis --publish never --config.directories.output=/tmp/trafaret-windows-dist",
+    "desktop:dist": "npm run build && npm run desktop:dist:from-dist",
+    "desktop:dist:from-dist": "npm run desktop:build && electron-builder --win nsis --x64 --publish never",
     "preview": "vite preview",
     "android:sync": "npm run build && node node_modules/@capacitor/cli/bin/capacitor sync android",
     "android:apk": "npm run android:sync && node scripts/android-build.mjs"
@@ -61,7 +67,7 @@
     "appId": "ru.trafaret.studio",
     "productName": "Трафарет",
     "directories": {
-      "output": "/mnt/agents/output/installers",
+      "output": "release/windows",
       "buildResources": "build"
     },
     "files": [

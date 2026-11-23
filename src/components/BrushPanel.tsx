@@ -3,7 +3,7 @@ import type { BrushConfig, BrushId, BrushPreset, PressureCurve } from '../types'
 import { BRUSH_ORDER } from '../lib/brushes'
 import { PanelHeading, Slider } from './UI'
 
-const PALETTE = ['#171914', '#f2f0e7', '#7d1f2d', '#1f4e46', '#314c76', '#a36938']
+const PALETTE = ['#e8e0d8', '#ef4b3e', '#ff7a45', '#a69b96', '#7d1f2d', '#f1e9e4']
 
 export function BrushPanel({
   brushes, activeId, customPresets, activeCustomIndex, onSelect, onSelectCustom,

@@ -1,10 +1,18 @@
-@import '@fontsource-variable/manrope';
+/* Onest: google/fonts, ofl/onest; full variable source, lossless WOFF2. */
 @import '@fontsource/ibm-plex-mono/400.css';
 @import '@fontsource/ibm-plex-mono/500.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@font-face {
+  font-family: Onest;
+  src: url('/fonts/onest-variable.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
 
 @layer base {
   :root {
@@ -37,28 +45,37 @@
     --sidebar-border: 75 7% 17%;
     --sidebar-ring: 68 97% 82%;
 
-    --surface-0: #11130f;
-    --surface-1: #171914;
-    --surface-2: #1d201a;
-    --surface-3: #252820;
-    --text-strong: #f3f1e9;
-    --text-normal: #d4d4c8;
-    --text-muted: #919488;
-    --text-faint: #666a60;
-    --line: #2b2e27;
-    --line-strong: #3b3f35;
-    --hover: #24271f;
-    --accent: #fbfda4;
-    --accent-bright: #fdffbd;
-    --accent-ink: #171914;
-    --accent-dim: rgb(251 253 164 / 8%);
-    --accent-line: rgb(251 253 164 / 26%);
-    --danger: #e68d83;
-    --canvas-bg: #20231d;
-    --canvas-grid: rgb(243 241 233 / 3.5%);
-    --document-shadow: rgb(0 0 0 / 52%);
-    --overlay: rgb(8 10 7 / 74%);
-    --font-sans: 'Manrope Variable', 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --surface-0: #090a0b;
+    --surface-1: #141416;
+    --surface-2: #1b191b;
+    --surface-3: #281c1d;
+    --text-strong: #f1e9e4;
+    --text-normal: #ddd0ca;
+    --text-muted: #a69b96;
+    --text-faint: #746b68;
+    --line: #382526;
+    --line-strong: #55302e;
+    --hover: #2a1c1d;
+    --accent: #ef4b3e;
+    --accent-bright: #ff7a45;
+    --accent-ink: #120b0a;
+    --accent-dim: rgb(239 75 62 / 10%);
+    --accent-line: rgb(239 75 62 / 30%);
+    --danger: #ff6f61;
+    --canvas-bg: #171315;
+    --canvas-grid: rgb(241 233 228 / 3.5%);
+    --document-shadow: rgb(0 0 0 / 62%);
+    --overlay: rgb(8 6 7 / 78%);
+    --font-sans: Onest, system-ui, sans-serif;
+    --hud-body: .9375rem;
+    --hud-control: .875rem;
+    --hud-caption: .8125rem;
+    --hud-leading: 1.45;
+    --hud-digits: tabular-nums;
+    --hud-metal: #18191b;
+    --hud-paper: #d4cec2;
+    --hud-ink: #222321;
+    --hud-scarlet: #dd5059;
     --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
   }
 

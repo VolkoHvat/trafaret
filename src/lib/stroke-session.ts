@@ -2,7 +2,7 @@ import type {
   BrushConfig, DocModel, SelectionModel, ShapeKind, SymmetryMode, VectorObject,
 } from '../types'
 import type { StrokePoint } from './brushes'
-import { defaultVectorTransform, ensureObjectOrigin, pointsBounds } from './geometry'
+import { defaultVectorTransform, ensureObjectOrigin, pointsBounds, unionBounds, type Bounds } from './geometry'
 
 export const copyPoints = (points: StrokePoint[]): StrokePoint[] => points.map(([x, y, pressure]) => [x, y, pressure])
 
@@ -12,17 +12,20 @@ function rotatePoint(point: StrokePoint, cx: number, cy: number, angle: number):
   return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos, point[2]]
 }
 
+function symmetricPoint(point: StrokePoint, doc: DocModel, mode: SymmetryMode, radialCount: number, setIndex: number) {
+  if (setIndex === 0 || mode === 'off') return point
+  if (mode === 'vertical') return [doc.width - point[0], point[1], point[2]] as StrokePoint
+  const angle = setIndex * Math.PI * 2 / radialCount
+  return rotatePoint(point, doc.width / 2, doc.height / 2, angle)
+}
+
 function symmetricPointSets(points: StrokePoint[], doc: DocModel, mode: SymmetryMode, radialCount: number) {
-  const sets = [points]
-  if (mode === 'vertical') {
-    sets.push(points.map(([x, y, pressure]) => [doc.width - x, y, pressure]))
-  } else if (mode === 'radial') {
-    for (let index = 1; index < radialCount; index++) {
-      const angle = index * Math.PI * 2 / radialCount
-      sets.push(points.map(point => rotatePoint(point, doc.width / 2, doc.height / 2, angle)))
-    }
-  }
-  return sets
+  const setCount = mode === 'vertical' ? 2 : mode === 'radial' ? radialCount : 1
+  return Array.from({ length: setCount }, (_, setIndex) => (
+    setIndex === 0
+      ? points
+      : points.map(point => symmetricPoint(point, doc, mode, radialCount, setIndex))
+  ))
 }
 
 function symmetricHandles(object: VectorObject, doc: DocModel, mode: SymmetryMode, radialCount: number, setIndex: number) {
@@ -85,6 +88,7 @@ export class StrokeSession {
   private readonly radialCount: number
   private readonly doc: DocModel
   private points: StrokePoint[]
+  private readonly pointSetsCache: StrokePoint[][]
 
   constructor(options: StrokeSessionOptions) {
     this.pointerId = options.pointerId
@@ -101,23 +105,49 @@ export class StrokeSession {
     this.radialCount = options.radialCount
     this.doc = options.doc
     this.points = [copyPoints([options.point])[0]]
+    this.pointSetsCache = symmetricPointSets(this.points, this.doc, this.symmetry, this.radialCount)
   }
 
   addPoint(point: StrokePoint) {
     if (this.line || this.shape) {
-      if (this.points.length === 1) this.points.push(point)
-      else this.points[1] = point
-      return
+      if (this.points.length === 1) {
+        this.points.push(point)
+        for (let index = 1; index < this.pointSetsCache.length; index++) {
+          this.pointSetsCache[index].push(symmetricPoint(point, this.doc, this.symmetry, this.radialCount, index))
+        }
+      } else {
+        this.points[1] = point
+        for (let index = 1; index < this.pointSetsCache.length; index++) {
+          this.pointSetsCache[index][1] = symmetricPoint(point, this.doc, this.symmetry, this.radialCount, index)
+        }
+      }
+      return true
     }
     const last = this.points[this.points.length - 1]
-    if (Math.hypot(point[0] - last[0], point[1] - last[1]) > 0.25) this.points.push(point)
+    if (Math.hypot(point[0] - last[0], point[1] - last[1]) > 0.25) {
+      this.points.push(point)
+      for (let index = 1; index < this.pointSetsCache.length; index++) {
+        this.pointSetsCache[index].push(symmetricPoint(point, this.doc, this.symmetry, this.radialCount, index))
+      }
+      return true
+    }
+    return false
   }
 
   pointSets(): StrokePoint[][] {
-    return symmetricPointSets(this.points, this.doc, this.symmetry, this.radialCount)
+    return this.pointSetsCache
+  }
+
+  lastPointSets(): StrokePoint[][] {
+    const start = Math.max(0, this.points.length - 2)
+    return this.pointSetsCache.map(points => points.slice(start))
   }
 
   previewPointSets(): StrokePoint[][] {
+    return this.pointSets()
+  }
+
+  predictionPointSets(): StrokePoint[][] {
     const sets = this.pointSets()
     if (this.line || this.shape) return sets
     return sets.map(points => {
@@ -136,9 +166,20 @@ export class StrokeSession {
     })
   }
 
+  private measuredPoints = 0
+  private measuredBounds?: Bounds
+
   rasterRect() {
     const pad = this.brush.size * 2 + 24
-    const bounds = pointsBounds(this.pointSets().flat(), pad)
+    const start = this.line || this.shape ? 0 : this.measuredPoints
+    if (start < this.points.length) {
+      const parts = this.pointSetsCache.map(set => pointsBounds(start ? set.slice(start) : set))
+      if (start && this.measuredBounds) parts.push(this.measuredBounds)
+      this.measuredBounds = unionBounds(parts)
+      this.measuredPoints = this.points.length
+    }
+    const raw = this.measuredBounds!
+    const bounds = { minX: raw.minX - pad, minY: raw.minY - pad, maxX: raw.maxX + pad, maxY: raw.maxY + pad }
     const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
     const x = clamp(Math.floor(bounds.minX), 0, this.doc.width - 1)
     const y = clamp(Math.floor(bounds.minY), 0, this.doc.height - 1)

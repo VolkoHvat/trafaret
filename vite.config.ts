@@ -35,6 +35,14 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        voidSandbox: path.resolve(__dirname, 'void-sandbox.html'),
+      },
+    },
+  },
   server: {
     port: 3000,
   },

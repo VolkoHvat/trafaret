@@ -7,6 +7,7 @@ import { renderStroke, widthAt, type StrokePoint } from '../lib/brushes'
 import { floodFill } from '../lib/fill'
 import { clipToSelection, drawSelectionOutline, selectionBounds } from '../lib/selection'
 import { analyzeArtwork, type ArtworkLayer, type ArtworkReport } from '../lib/artwork-analysis'
+import { analyzeVisibleQuality, type VisibleQuality } from '../lib/quality/visible'
 import { makeCanvas } from '../lib/project'
 import { Compositor } from '../lib/compositor'
 import { HistoryStore } from '../lib/history'
@@ -35,6 +36,7 @@ export interface StudioHandle {
   fitView: () => void
   exportImage: (transparent: boolean, stencil: boolean, onlyActive?: boolean) => Promise<Blob>
   analyzeArtwork: () => ArtworkReport
+  analyzeQuality: () => VisibleQuality
   dropHistoryFor: (layerId: string) => void
   historyPixels: () => number
 }
@@ -149,6 +151,8 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
   const panRef = useRef<{ pointerId: number; x: number; y: number; panX: number; panY: number } | null>(null)
   const historyRef = useRef(new HistoryStore<HistoryEntry>(MAX_HISTORY_PIXELS))
   const frameRef = useRef<number | null>(null)
+  const dirtyRef = useRef<Rect | null>(null)
+  const previewPending = useRef(false)
   const propsRef = useRef(props)
   useLayoutEffect(() => { propsRef.current = props })
 
@@ -205,7 +209,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
   const channelCanvas = (layer: LayerModel, channel: 'content' | 'mask') => channel === 'mask' ? layer.mask! : layer.canvas
 
   const compositorRef = useRef(new Compositor())
-  const composeTo = useCallback((target: HTMLCanvasElement, background: boolean, stencilMode: boolean, onlyActive = false, scale = 1) => {
+  const composeTo = useCallback((target: HTMLCanvasElement, background: boolean, stencilMode: boolean, onlyActive = false, scale = 1, dirty: Rect | null = null) => {
     ensureBuffers()
     const { doc, layers, activeLayerId } = propsRef.current
     const current = currentRef.current
@@ -214,8 +218,13 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       current: current ? {
         layerId: current.layerId, channel: current.channel, eraser: current.eraser,
         canvas: obtainBuffer(strokeRef),
+        extent: current.channel === 'content' && !current.vector && !current.shape &&
+          current.brush.id === 'fineline' && !current.brush.jitter && !current.brush.blurScale &&
+          !current.brush.strokeMode && current.brush.thinning >= 0 && current.brush.thinning <= 1 &&
+          layers.length === 1 && layers[0].pixelVersion > 0 ? current.rasterRect() : undefined,
       } : null,
       rasterMove: rasterMoveRef.current,
+      dirty,
     })
   }, [ensureBuffers, obtainBuffer])
 
@@ -343,18 +352,51 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     }
   }, [])
 
-  const renderNow = useCallback(() => {
-    if (frameRef.current !== null) {
-      cancelAnimationFrame(frameRef.current)
-      frameRef.current = null
+  const flushPreview = useCallback(() => {
+    const current = currentRef.current
+    if (!current || !previewPending.current) return
+    const { doc, selection } = propsRef.current
+    const ctx = obtainBuffer(strokeRef).getContext('2d', { willReadFrequently: true })!
+    ctx.clearRect(0, 0, doc.width, doc.height)
+    ctx.save()
+    clipToSelection(ctx, selection, doc.width, doc.height)
+    for (const points of current.pointSets()) {
+      if (current.shape) {
+        renderVectorObject(ctx, {
+          id: 'preview', kind: 'shape', shape: current.shape, points,
+          brush: current.brush, color: current.color, pen: current.pen, closed: true,
+          transform: defaultVectorTransform(),
+        })
+      } else {
+        renderStroke(ctx, points, current.brush, current.color, true, current.pen)
+      }
     }
+    ctx.restore()
+    previewPending.current = false
+  }, [obtainBuffer])
+
+  const renderNow = useCallback(() => {
+    frameRef.current = null
     const canvas = canvasRef.current
     if (!canvas) return
-    composeTo(canvas, true, propsRef.current.stencil)
+    flushPreview()
+    const dirty = dirtyRef.current
+    dirtyRef.current = null
+    composeTo(canvas, true, propsRef.current.stencil, false, 1, dirty)
     drawOverlay(canvas.getContext('2d', { willReadFrequently: true })!)
-  }, [composeTo, drawOverlay])
+  }, [composeTo, drawOverlay, flushPreview])
 
-  const scheduleRender = useCallback(() => {
+  const scheduleRender = useCallback((dirty?: Rect) => {
+    if (dirty) {
+      const current = dirtyRef.current
+      if (!current) dirtyRef.current = { ...dirty }
+      else {
+        const minX = Math.min(current.x, dirty.x), minY = Math.min(current.y, dirty.y)
+        const maxX = Math.max(current.x + current.width, dirty.x + dirty.width)
+        const maxY = Math.max(current.y + current.height, dirty.y + dirty.height)
+        dirtyRef.current = { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
+      }
+    }
     if (frameRef.current !== null) return
     frameRef.current = requestAnimationFrame(renderNow)
   }, [renderNow])
@@ -669,12 +711,14 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       }))
       return analyzeArtwork(doc, artworkLayers, image)
     },
+    analyzeQuality: () => {
+      const { doc, layers } = propsRef.current
+      return analyzeVisibleQuality(doc, layers)
+    },
     historyPixels: () => historyRef.current.size,
   }), [addPath, clearActive, commitPen, composeTo, deleteSelectedObject, duplicateSelectedObjects, releaseBuffer, restoreHistory, scheduleRender, setSelectedObjectSize, simplifySelectedPath, updateHistoryState])
 
-  const clientToDoc = useCallback((clientX: number, clientY: number): StrokePoint => {
-    const canvas = canvasRef.current!
-    const rect = canvas.getBoundingClientRect()
+  const clientToDoc = useCallback((clientX: number, clientY: number, rect = canvasRef.current!.getBoundingClientRect()): StrokePoint => {
     const { doc } = propsRef.current
     let x = (clientX - rect.left) * doc.width / rect.width
     const y = (clientY - rect.top) * doc.height / rect.height
@@ -682,33 +726,13 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     return [clamp(x, 0, doc.width), clamp(y, 0, doc.height), 0.5]
   }, [])
 
-  const redrawCurrent = useCallback((complete: boolean) => {
-    const current = currentRef.current
-    if (!current) return
-    const { doc, selection } = propsRef.current
-    const canvas = obtainBuffer(strokeRef)
-    const ctx = canvas.getContext('2d', { willReadFrequently: true })!
-    ctx.clearRect(0, 0, doc.width, doc.height)
-    ctx.save()
-    clipToSelection(ctx, selection, doc.width, doc.height)
-    const sets = complete ? current.pointSets() : current.previewPointSets()
-    for (const points of sets) {
-      if (current.shape) {
-        renderVectorObject(ctx, {
-          id: 'preview', kind: 'shape', shape: current.shape, points: copyPoints(points),
-          brush: current.brush, color: current.color, pen: current.pen, closed: true,
-          transform: defaultVectorTransform(),
-        })
-      } else {
-        renderStroke(ctx, points, current.brush, current.color, complete, current.pen)
-      }
-    }
-    ctx.restore()
-  }, [obtainBuffer])
-
   const finishStroke = useCallback(() => {
     const current = currentRef.current
     if (!current) return
+    if (frameRef.current !== null) {
+      cancelAnimationFrame(frameRef.current)
+      frameRef.current = null
+    }
     const { doc, layers, selection } = propsRef.current
     const layer = layers.find(item => item.id === current.layerId)
     if (!layer) {
@@ -719,15 +743,17 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       scheduleRender()
       return
     }
-    redrawCurrent(true)
     if (current.vector) {
       const before = cloneObjects(layer.objects)
       const additions = current.vectorObjects(selectionClips(selection), vectorId)
       pushObjectHistory(layer, before, [...before, ...additions])
       propsRef.current.onSelectObject(additions[0].id)
     } else {
+      flushPreview()
       const canvas = channelCanvas(layer, current.channel)
       const ctx = canvas.getContext('2d', { willReadFrequently: true })!
+      const rect = current.rasterRect()
+      const before = ctx.getImageData(rect.x, rect.y, rect.width, rect.height)
       ctx.save()
       clipToSelection(ctx, propsRef.current.selection, doc.width, doc.height)
       ctx.globalCompositeOperation = current.eraser ? 'destination-out' : 'source-over'
@@ -736,8 +762,6 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       if (current.channel === 'mask') layer.maskVersion = (layer.maskVersion ?? 0) + 1
       else { layer.pixelVersion += 1; layer.filterKey = undefined }
 
-      const rect = current.rasterRect()
-      const before = obtainBuffer(beforeRef).getContext('2d', { willReadFrequently: true })!.getImageData(rect.x, rect.y, rect.width, rect.height)
       const after = ctx.getImageData(rect.x, rect.y, rect.width, rect.height)
       pushHistory({
         kind: 'raster', layerId: layer.id, channel: current.channel, rect,
@@ -750,7 +774,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     compositorRef.current.release()
     propsRef.current.onMutated()
     scheduleRender()
-  }, [pushHistory, pushObjectHistory, obtainBuffer, redrawCurrent, releaseBuffer, scheduleRender])
+  }, [pushHistory, pushObjectHistory, flushPreview, releaseBuffer, scheduleRender])
 
   const startObjectDrag = (event: React.PointerEvent<HTMLCanvasElement>, point: StrokePoint) => {
     const { layers, activeLayerId, selectedObjectId, view } = propsRef.current
@@ -1124,11 +1148,6 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       return
     }
     const channel = maskEditing ? 'mask' : 'content'
-    const source = channelCanvas(layer, channel)
-    const before = obtainBuffer(beforeRef)
-    const beforeCtx = before.getContext('2d', { willReadFrequently: true })!
-    beforeCtx.clearRect(0, 0, before.width, before.height)
-    beforeCtx.drawImage(source, 0, 0)
     const pen = event.pointerType === 'pen'
     point[2] = pen ? event.pressure || 0.5 : 0.5
     const eraser = tool === 'eraser'
@@ -1143,7 +1162,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
         thinning: 0, taperStart: 0, taperEnd: 0, pressureCurve: 'linear',
       } : { ...brush },
     })
-    redrawCurrent(false)
+    previewPending.current = true
     scheduleRender()
   }
 
@@ -1175,13 +1194,13 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
       propsRef.current.onViewChange({ ...propsRef.current.view, panX: pan.panX + event.clientX - pan.x, panY: pan.panY + event.clientY - pan.y })
       return
     }
-    const point = clientToDoc(event.clientX, event.clientY)
     if (objectDragRef.current?.pointerId === event.pointerId) {
-      moveObjectDrag(point)
+      moveObjectDrag(clientToDoc(event.clientX, event.clientY))
       return
     }
     if (rasterMoveRef.current?.pointerId === event.pointerId) {
       const move = rasterMoveRef.current
+      const point = clientToDoc(event.clientX, event.clientY)
       move.dx = point[0] - move.start[0]
       move.dy = point[1] - move.start[1]
       scheduleRender()
@@ -1189,6 +1208,7 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     }
     if (selectionDraftRef.current?.pointerId === event.pointerId) {
       const selection = selectionDraftRef.current.selection
+      const point = clientToDoc(event.clientX, event.clientY)
       if (selection.kind === 'lasso') {
         const last = selection.points[selection.points.length - 1]
         if (Math.hypot(point[0] - last[0], point[1] - last[1]) > 1) selection.points.push([point[0], point[1]])
@@ -1202,14 +1222,15 @@ export const StudioCanvas = forwardRef<StudioHandle, Props>(function StudioCanva
     const current = currentRef.current
     if (!current || current.pointerId !== event.pointerId) return
     event.preventDefault()
-    const events = event.nativeEvent.getCoalescedEvents?.() ?? [event.nativeEvent]
-    for (const sample of events) {
-      const samplePoint = clientToDoc(sample.clientX, sample.clientY)
-      samplePoint[2] = current.pen ? sample.pressure || 0.5 : 0.5
-      current.addPoint(samplePoint)
+    const rect = canvasRef.current!.getBoundingClientRect()
+    const events = event.nativeEvent.getCoalescedEvents?.() ?? []
+    const samples = events.length ? events : [event.nativeEvent]
+    for (const sample of samples) {
+      const samplePoint = clientToDoc(sample.clientX, sample.clientY, rect)
+      samplePoint[2] = current.pen ? sample.pressure : 0.5
+      if (current.addPoint(samplePoint)) previewPending.current = true
     }
-    redrawCurrent(false)
-    scheduleRender()
+    if (previewPending.current) scheduleRender()
   }
 
   const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {

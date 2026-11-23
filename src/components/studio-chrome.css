@@ -1,0 +1,4 @@
+.brand-wordmark { display:block; width:clamp(7rem,12vw,12.5rem); height:auto; color:#ede6d8; flex:none; }
+.hud-head > div:first-child:not(:has(.brand-wordmark)) { background:url('./dragon-sigil.svg') left center / auto min(100%,3rem) no-repeat; padding-inline-start:3.4rem; }
+.hud-head { border-image:linear-gradient(90deg,var(--hud-scarlet),#594a49 36%,#383639) 1; }
+@media(max-width:540px),(max-height:520px) { .hud-head > div:first-child:not(:has(.brand-wordmark)) { background-size:auto 1.8rem; padding-inline-start:2.1rem; } }

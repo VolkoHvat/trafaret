@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointer } from 'react'
-import { DEFAULT, demonstration, demoOrder, freshField, merge, PathInput, project, Transfer } from '../lib/density-transfer'
+import { DEFAULT, demonstration, demoOrder, freshField, merge, PathInput, PEN_DEAD_ZONE_PX, project, Transfer } from '../lib/density-transfer'
 import type { Brush, Mode, Point, Rect } from '../lib/density-transfer'
 import { encodeField } from '../lib/field-document'
 import { SMALL, LARGE } from '../lib/field-size'
@@ -24,7 +24,7 @@ import DensitySection from './DensitySection'
 import './DensityCanvas.css'
 import './density-hud.css'
 
-type Stroke = { material?:ReturnType<PigmentField['materialStroke']>; core:Set<number>; gesture?: Gesture; id: number; path: PathInput; before: Patch; queue: Point[]; ended: boolean; frame: number; reduced: boolean }
+type Stroke = { material?:ReturnType<PigmentField['materialStroke']>; core:Set<number>; gesture?: Gesture; id: number; path: PathInput; anchor: {x:number;y:number}; before: Patch; queue: Point[]; ended: boolean; frame: number; reduced: boolean }
 const CAPACITY = 2048
 function download(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob), a = document.createElement('a')
@@ -296,7 +296,7 @@ function DrawingStudio({size}:{size:Size}) {
     kernel.markCore=i=>core.add(i)
     if(transfer)kernel.material=(core,ring)=>transfer.stamp(core,ring)
     const path = new PathInput(field, kernel, start)
-    active.current = { core, material:transfer, gesture, id: e.pointerId, path, before, queue: [], ended: false, frame: 0, reduced: false }; setBusy(true); paint(path.first)
+    active.current = { core, material:transfer, gesture, id: e.pointerId, path, anchor: {x:e.clientX,y:e.clientY}, before, queue: [], ended: false, frame: 0, reduced: false }; setBusy(true); paint(path.first)
   }
   function drain(s: Stroke) {
     if (active.current !== s) return
@@ -325,7 +325,14 @@ function DrawingStudio({size}:{size:Size}) {
     }
     const s = active.current
     if (!s || s.id !== e.pointerId || s.ended) return
-    const packet = e.nativeEvent.getCoalescedEvents?.() ?? [], rect = e.currentTarget.getBoundingClientRect()
+    const rect = e.currentTarget.getBoundingClientRect(), packet: PointerEvent[] = []
+    const far=(ev:{clientX:number;clientY:number})=>Math.hypot(ev.clientX-s.anchor.x,ev.clientY-s.anchor.y)>=PEN_DEAD_ZONE_PX
+    for(const ev of e.nativeEvent.getCoalescedEvents?.() ?? [])if(far(ev)){packet.push(ev);s.anchor={x:ev.clientX,y:ev.clientY}}
+    // The event itself usually repeats the last coalesced sample; on release it is always kept.
+    const keepEnd=ended||far(e)
+    if(!keepEnd&&!packet.length)return
+    if(!keepEnd)packet.pop()
+    s.anchor={x:e.clientX,y:e.clientY}
     const incoming=s.queue.length+packet.length+1
     if(s.gesture){s.gesture.packets++;s.gesture.peak=Math.max(s.gesture.peak,incoming)}
     if (incoming > CAPACITY) {

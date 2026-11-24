@@ -4,6 +4,7 @@ import { decodeField, encodeField } from './field-document'
 import { TileHistory } from './field-tiles'
 import { defaults as bodyDefaults } from './surface-body'
 import { SMALL, LARGE } from './field-size'
+import type { PigmentSnapshot } from './pigment'
 
 describe('workspace',()=>{
   for(const size of [SMALL,LARGE]) it(`balanced edits and exact undo at ${size.width}`,()=>{
@@ -37,4 +38,15 @@ describe('workspace',()=>{
     await expect(unpack(new Blob([bad]),f.length)).rejects.toThrow('метаданные')
     expect(()=>workspace({...meta,reference:'https://example.com/image.png'})).toThrow()
   })
+  it('saves a 2048 document with every pigment channel filled in every tile',async()=>{
+    const f=new Float64Array(LARGE.width*LARGE.height).fill(1), tiles:PigmentSnapshot['tiles']=[]
+    for(const channel of ['line','fill','mixMR','mixGB','mixLine'] as const)for(let id=0;id<4096;id++){
+      const words=new Uint32Array(1024);for(let i=0;i<1024;i++)words[i]=channel==='line'||channel==='fill'?0xff000000|(id*1024+i)&0xffffff:(i+1)|1<<16
+      tiles.push({channel,id,pixels:Buffer.from(words.buffer).toString('base64')})
+    }
+    const meta={...defaults(),pigment:{version:2 as const,width:2048,height:2048,tiles}}
+    const back=await unpack(pack(f,meta),f.length)
+    expect(back.meta?.pigment?.tiles.length).toBe(5*4096)
+    expect(back.meta?.pigment?.tiles[4096*3+7]).toEqual(tiles[4096*3+7])
+  },60_000)
 })

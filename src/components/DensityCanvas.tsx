@@ -120,7 +120,11 @@ function DrawingStudio({size}:{size:Size}) {
     const warn=(e:BeforeUnloadEvent)=>{if(unsaved()||active.current||importing.current){e.preventDefault();e.returnValue=''}}
     window.addEventListener('beforeunload',warn);return ()=>window.removeEventListener('beforeunload',warn)
   },[])
-  function exportDocument(){const m=metaRef.current;download(pack(field,{...m,pigment:pigment.current.hasInk?pigment.current.snapshot():undefined,reference:null}),`${m.name.trim()||'поле'}.tfw`)}
+  function exportDocument(){
+    const m=metaRef.current
+    try{download(pack(field,{...m,pigment:pigment.current.hasInk?pigment.current.snapshot():undefined,reference:null}),`${m.name.trim()||'поле'}.tfw`)}
+    catch(err){setStatus(`Не удалось сохранить .tfw: ${err instanceof Error?err.message:'ошибка'}. Попробуйте «Экспорт поля» и PNG.`)}
+  }
   async function openLatest(){
     if(importing.current||active.current||saving.current||!window.confirm('Заменить несохранённую версию этой вкладки актуальной из браузера? Сначала скачайте .tfw, если нужны обе.'))return
     importing.current=true;setBusy(true)

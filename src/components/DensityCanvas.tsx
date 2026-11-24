@@ -174,8 +174,10 @@ function DrawingStudio({size}:{size:Size}) {
     try {
       while (pending.current.dirty || pendingMeta.current) {
         const batch = pending.current; pending.current = new SharedFieldBatch(field)
-        const snapshot=pendingMeta.current;pendingMeta.current=null
         const full=replaceInk.current;replaceInk.current=false
+        // A full write replaces every stored pigment tile and ignores batch deltas, so it must carry
+        // the ink as it is now: after a failed write, newer metadata or strokes would otherwise erase it.
+        const snapshot=full?{...(pendingMeta.current??metaRef.current),pigment:pigment.current.hasInk?pigment.current.snapshot():undefined}:pendingMeta.current;pendingMeta.current=null
         try { revision.current=await saveBatch(WIDTH,batch.density,snapshot,revision.current,full?undefined:batch.pigment) } catch (err) {
           pendingMeta.current ??= snapshot
           pending.current.prepend(batch);replaceInk.current ||= full

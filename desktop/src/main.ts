@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, net, safeStorage, shell } from 'electron'
 import { join } from 'node:path'
 import { randomBytes, webcrypto } from 'node:crypto'
 import { betaFeedbackUrl } from '../../src/lib/beta-feedback-url'
@@ -54,6 +54,22 @@ function createWindow() {
       appPath: app.getAppPath(),
       devOrigin: app.isPackaged ? null : 'http://localhost:3000',
     })) event.preventDefault()
+  })
+
+  // The page blocks unload while autosave is pending or stopped. Without this handler Electron
+  // silently cancels the close, so the window seems frozen; ask the user instead.
+  mainWindow.webContents.on('will-prevent-unload', event => {
+    const choice = dialog.showMessageBoxSync(mainWindow!, {
+      type: 'warning',
+      title: 'Трафарет',
+      message: 'Рисунок ещё не сохранён',
+      detail: 'Автосохранение не завершено или остановлено. Чтобы ничего не потерять, вернитесь и нажмите «Сохранить документ».',
+      buttons: ['Вернуться', 'Закрыть без сохранения'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    })
+    if (choice === 1) event.preventDefault()
   })
 
   void mainWindow.loadFile(join(app.getAppPath(), 'dist', 'index.html'))

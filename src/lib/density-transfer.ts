@@ -91,6 +91,10 @@ function bounded({ x, y, time = 0 }: Point, { width: WIDTH, height: HEIGHT }: Si
   if (!Number.isFinite(x) || !Number.isFinite(y)) throw new RangeError('point')
   return { x: clamp(x, 0, WIDTH - 1), y: clamp(y, 0, HEIGHT - 1), time: Number.isFinite(time) ? time : 0 }
 }
+// Input filter, not physics: a held pen jitters by fractions of a pixel, and PathInput counts every
+// displacement as path length. Samples closer than this to the last accepted one are skipped;
+// the release point is always accepted. CSS px, so precision follows the zoom.
+export const PEN_DEAD_ZONE_PX = 1
 export class PathInput {
   private last: Point
   private previousStamp: Point

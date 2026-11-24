@@ -39,7 +39,11 @@ export async function checkImage(url:string) {
   validateReference(url)
   const image=new Image(); image.src=url; await image.decode()
 }
-const exportMetadataLimit = (cells:number) => cells === 2048**2 ? 48*1024*1024 : metadataLimit
+// Worst case at 2048²: every tile of all five pigment channels stored as base64
+// (1024 words → 5464 chars) plus its JSON keys, on top of the ordinary metadata.
+// A smaller limit made fully coloured documents impossible to save as .tfw.
+const fullInk2048 = 5 * (2048 / 32) ** 2 * (5464 + 64)
+const exportMetadataLimit = (cells:number) => cells === 2048**2 ? fullInk2048 + metadataLimit : metadataLimit
 export function workspace(value:unknown,cells?:number):Workspace {
   if (!value || typeof value!=='object') throw Error('Нет метаданных документа')
   const {name,widthMm,mode,opacity,reference,bodyPlacement,report,pigment}=value as Workspace

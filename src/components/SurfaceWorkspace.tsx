@@ -4,7 +4,7 @@ import { presets, defaults as legacyBody, type Preset } from '../lib/surface-bod
 import { front, parts, names, measurementsDefs, texelBounds, scene, sceneBuffers, chart, flatHit, connected, surfacePitch, type Camera, type Part, type Settings, type Hit } from '../lib/surface-model'
 import type { SharedField } from '../lib/shared-field'
 import { writeTile, type Patch } from '../lib/field-tiles'
-import { PathInput, project, type BufferMode } from '../lib/density-transfer'
+import { PathInput, PEN_DEAD_ZONE_PX, project, type BufferMode } from '../lib/density-transfer'
 import { encodeField } from '../lib/field-document'
 import { decodeSurfaceProject, encodeSurfaceProject, maxProjectBytes, SurfaceBrush, validMeasurement } from '../lib/customer-surface-profile'
 import { SurfaceZone } from '../lib/surface-zone'
@@ -88,9 +88,10 @@ export default function SurfaceWorkspace({beginMaterial,bufferMode,projection,pi
   e.preventDefault();const s:Session={core:new Set(),material:mode==='draw'?beginMaterial():undefined,id:e.pointerId,target:e.currentTarget,model,mode,before:mode==='draw'?new Map():null,zoneBefore:mode==='zone'?zone.clone():null,x:e.clientX,y:e.clientY,last:null,path:null,changed:false}
   gesture.current=s;s.target.setPointerCapture(s.id);setBusy(true);if(mode==='draw'||mode==='zone')trace(s,s.x,s.y)
  }
- function move(e:Pointer<HTMLDivElement>){
+ function move(e:Pointer<HTMLDivElement>,release=false){
   const s=gesture.current;if(!s||s.id!==e.pointerId)return
   const dx=e.clientX-s.x,dy=e.clientY-s.y;if(!dx&&!dy)return
+  if(s.mode==='draw'&&!release&&Math.hypot(dx,dy)<PEN_DEAD_ZONE_PX)return
   if(s.mode==='orbit')setCamera(v=>({...v,yaw:v.yaw+dx*.012,pitch:Math.max(-Math.PI/2,Math.min(Math.PI/2,v.pitch+dy*.008))}))
   else if(s.mode==='pan'){
    if(s.model){const rect=s.target.getBoundingClientRect();setCamera(v=>({...v,panX:(v.panX??0)+dx/rect.width,panY:(v.panY??0)+dy/rect.height}))}
@@ -98,7 +99,7 @@ export default function SurfaceWorkspace({beginMaterial,bufferMode,projection,pi
   }else trace(s,e.clientX,e.clientY)
   s.x=e.clientX;s.y=e.clientY
  }
- const handlers={onPointerDown:down,onPointerMove:move,onPointerUp:(e:Pointer<HTMLDivElement>)=>{if(e.pointerId===gesture.current?.id){move(e);finish(false)}},onPointerCancel:(e:Pointer<HTMLDivElement>)=>{if(e.pointerId===gesture.current?.id)finish(true)},onLostPointerCapture:(e:Pointer<HTMLDivElement>)=>{if(e.pointerId===gesture.current?.id)finish(true)}}
+ const handlers={onPointerDown:down,onPointerMove:move,onPointerUp:(e:Pointer<HTMLDivElement>)=>{if(e.pointerId===gesture.current?.id){move(e,true);finish(false)}},onPointerCancel:(e:Pointer<HTMLDivElement>)=>{if(e.pointerId===gesture.current?.id)finish(true)},onLostPointerCapture:(e:Pointer<HTMLDivElement>)=>{if(e.pointerId===gesture.current?.id)finish(true)}}
  function choosePreset(preset:Preset){
   if(body.preset===preset)return
   const baseline=body.preset?presets[body.preset]:legacyBody
